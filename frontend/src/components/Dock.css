@@ -1,0 +1,100 @@
+.dock-outer {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(0.7rem, 1.8vw, 1.1rem);
+  transform: translateX(-50%);
+  z-index: 55;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  max-width: calc(100% - 1rem);
+  pointer-events: none;
+}
+
+.dock-panel {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.72rem;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-radius: 1.1rem;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in srgb, var(--surface), var(--surface-alt) 45%);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
+  padding: 0 0.62rem 0.62rem;
+}
+
+.dock-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.dock-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.78rem;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface), var(--surface-alt) 35%);
+  color: var(--text);
+  box-shadow:
+    0 8px 16px rgba(0, 0, 0, 0.14),
+    0 2px 4px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+}
+
+.dock-item:hover {
+  border-color: var(--line-strong);
+}
+
+.dock-item:focus-visible {
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.dock-item.is-active {
+  border-color: color-mix(in srgb, var(--primary), transparent 42%);
+  background: color-mix(in srgb, var(--primary), transparent 88%);
+  color: var(--primary);
+}
+
+.dock-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dock-label {
+  position: absolute;
+  top: -1.9rem;
+  left: 50%;
+  width: fit-content;
+  white-space: nowrap;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.16);
+  padding: 0.16rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+@media (max-width: 720px) {
+  .dock-panel {
+    gap: 0.52rem;
+    padding: 0 0.5rem 0.5rem;
+  }
+
+  .dock-label {
+    display: none;
+  }
+}

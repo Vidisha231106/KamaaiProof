@@ -105,17 +105,34 @@ function UploadPage() {
   };
 
   return (
-    <section className="upload-page">
+    <section className="upload-page" aria-labelledby="upload-heading">
       <div className="panel-heading-row">
-        <h1>Upload documents and generate your Work Passport</h1>
-        <p>Minimum requirement: 3 tagged files</p>
+        <div>
+          <h1 id="upload-heading">Upload documents and generate your Work Passport</h1>
+          <p>Tag each file clearly to improve confidence in your earning summary.</p>
+        </div>
+        <p className="progress-pill" aria-live="polite">
+          Tagged files: {taggedCount}/3
+        </p>
       </div>
 
-      <div {...getRootProps()} className={`dropzone ${isDragActive ? "active" : ""}`}>
-        <input {...getInputProps()} />
-        <p className="dropzone-title">Drag and drop images or PDFs here</p>
-        <p className="dropzone-subtitle">Supported formats: JPG, PNG, WEBP, PDF</p>
-      </div>
+      <section className="dropzone-panel" aria-label="Upload area">
+        <div
+          {...getRootProps({
+            role: "button",
+            "aria-label": "Upload documents by dragging and dropping or selecting files"
+          })}
+          className={`dropzone ${isDragActive ? "active" : ""}`}
+        >
+          <input {...getInputProps()} />
+          <p className="dropzone-title">Drag and drop images or PDFs here</p>
+          <p className="dropzone-subtitle">Supported formats: JPG, PNG, WEBP, PDF</p>
+          <div className="dropzone-hint-row" aria-hidden="true">
+            <span className="dropzone-hint">Secure local upload</span>
+            <span className="dropzone-hint">No edits to original files</span>
+          </div>
+        </div>
+      </section>
 
       <section className="documents-panel" aria-labelledby="uploaded-files-heading">
         <h2 id="uploaded-files-heading">Uploaded files</h2>
@@ -134,6 +151,7 @@ function UploadPage() {
                 <select
                   className="select-input"
                   value={item.tag}
+                  aria-label={`Select file type for ${item.file.name}`}
                   onChange={(event) => updateTag(item.id, event.target.value)}
                 >
                   <option value="">Select file type</option>
@@ -144,7 +162,12 @@ function UploadPage() {
                   ))}
                 </select>
 
-                <button className="btn btn-ghost" type="button" onClick={() => removeDocument(item.id)}>
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  aria-label={`Remove ${item.file.name}`}
+                  onClick={() => removeDocument(item.id)}
+                >
                   Remove
                 </button>
               </li>
@@ -171,10 +194,16 @@ function UploadPage() {
         <button className="btn btn-secondary" type="button" onClick={handleUseDemo} disabled={loading}>
           Open Demo Result
         </button>
-        <p className="status-text">Tagged files: {taggedCount}/3</p>
+        <p className="status-text" aria-live="polite">
+          {canGenerate ? "Ready to generate passport." : "Add tags to at least 3 files to continue."}
+        </p>
       </div>
 
-      {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p className="error-banner" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
     </section>
   );
 }

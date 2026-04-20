@@ -38,7 +38,7 @@ function ResultPage() {
   if (!result) {
     return (
       <section className="result-page">
-        <div className="empty-state">
+        <div className="empty-state" role="status" aria-live="polite">
           <h1>No result generated yet</h1>
           <p>Upload your documents first to generate the Work Passport summary.</p>
           <button className="btn btn-primary" type="button" onClick={() => navigate("/upload")}>
@@ -50,10 +50,13 @@ function ResultPage() {
   }
 
   return (
-    <section className="result-page">
+    <section className="result-page" aria-labelledby="result-heading">
       <div className="panel-heading-row">
-        <h1>Your Work Passport Summary</h1>
-        <p>Portable supporting evidence for formal credit review</p>
+        <div>
+          <h1 id="result-heading">Your Work Passport Summary</h1>
+          <p>Portable supporting evidence for formal credit review</p>
+        </div>
+        <p className="progress-pill">Share-ready output</p>
       </div>
 
       <section className="summary-grid" aria-label="Summary highlights">
@@ -76,6 +79,7 @@ function ResultPage() {
 
         <div className="table-wrap">
           <table>
+            <caption className="sr-only">Parsed documents with categories, amounts, and verification status</caption>
             <thead>
               <tr>
                 <th>Source</th>
@@ -125,7 +129,7 @@ function ResultPage() {
 
       <LoanRealityCalculator />
 
-      <div className="action-row">
+      <div className="action-row action-row-end">
         <button className="btn btn-primary" type="button" onClick={() => navigate("/upload")}>
           Generate Another Passport
         </button>
