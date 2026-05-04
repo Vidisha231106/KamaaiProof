@@ -1,0 +1,15 @@
+# Environments
+venv/
+.env
+
+# Python specific
+__pycache__/
+*.pyc
+
+# Local Database & Storage (specific to your engine)
+backend/src/python_engine/chroma_store/
+backend/src/python_engine/documents/
+
+# Logs and OS files
+*.log
+.DS_Store

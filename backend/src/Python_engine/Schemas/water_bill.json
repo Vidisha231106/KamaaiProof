@@ -1,0 +1,11 @@
+{
+  "document_type": "water_bill",
+  "description": "water bill BWSSB municipal corporation water board consumer number billing period amount due payment water charges",
+  "fields": {
+    "consumer_number": null,
+    "billing_period": null,
+    "amount_due": null,
+    "due_date": null,
+    "connection_id": null
+  }
+}

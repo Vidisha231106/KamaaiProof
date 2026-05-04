@@ -1,0 +1,12 @@
+{
+  "document_type": "rent_receipt",
+  "description": "rent receipt rental payment landlord tenant property address monthly rent amount date signature received towards rent",
+  "fields": {
+    "rent_amount": null,
+    "month_covered": null,
+    "landlord_name": null,
+    "tenant_name": null,
+    "property_address": null,
+    "payment_date": null
+  }
+}

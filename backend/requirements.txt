@@ -1,0 +1,8 @@
+pytesseract
+pillow
+opencv-python
+chromadb
+sentence-transformers
+anthropic
+python-dotenv
+groq
