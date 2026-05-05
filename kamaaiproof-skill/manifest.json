@@ -2,7 +2,7 @@
   "name": "KamaaiProof",
   "version": "2.0.0",
   "description": "Financial document parsing and Work Passport generation for informal workers.",
-  "skill_path": "kamaaiproof/SKILL.md",
+  "skill_path": "kamaaiproof-skill/SKILL.md",
   "entry_point": "backend/src/Python_engine/pi_engine.py",
   "capabilities": [
     "vision_extraction",
@@ -11,7 +11,7 @@
   ],
   "config": {
     "llm_provider": "groq",
-    "model": "llama-3.2-11b-vision-preview",
+    "model": "meta-llama/llama-4-scout-17b-16e-instruct",
     "window_months": 6
   }
 }
