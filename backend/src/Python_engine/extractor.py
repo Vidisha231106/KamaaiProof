@@ -3,203 +3,117 @@ import json
 import base64
 from groq import Groq
 from dotenv import load_dotenv
+import ocr
+import retrieval
 
 load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-
 def encode_image(image_path: str) -> tuple[str, str]:
-    """
-    Converts image file to base64 string so it can be sent to Groq.
-    Also detects whether it's a jpg or png.
-    """
+    """Converts image to base64 for Groq Vision."""
     extension = image_path.lower().split(".")[-1]
     media_type = "image/jpeg" if extension in ["jpg", "jpeg"] else "image/png"
-    
     with open(image_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("utf-8")
-    
     return encoded, media_type
-
 
 def extract_financial_data(image_path: str) -> dict:
     """
-    MAIN HANDOFF FUNCTION — this is what Member 2 calls.
-    
-    Takes a path to any financial document image.
-    Sends it to Groq Vision and returns structured JSON.
-    
-    Example:
-        result = extract_financial_data("Documents/bhim.jpeg")
-        print(result)
+    LEGACY ROUTE — OCR-ANCHORED RAG
+    Uses Tesseract OCR to find the document type, then LLM to extract.
     """
-
-    print(f"\nProcessing: {image_path}")
-    print("=" * 40)
-
-    # Step 1 — encode image to base64
-    print("Step 1: Encoding image...")
-    image_data, media_type = encode_image(image_path)
-
-    # Step 2 — send to Groq with structured extraction prompt
-    print("Step 2: Sending to Groq Vision...")
+    print(f"\n[OCR-RAG Route] Processing: {image_path}")
+    ocr_text = ocr.extract_text_from_image(image_path)
+    schema_context = retrieval.retrieve_template(ocr_text)
+    doc_type = schema_context["document_type"]
     
+    image_data, media_type = encode_image(image_path)
+    return _vision_extract_step(image_data, media_type, schema_context, doc_type)
+
+def extract_with_pure_vision(image_path: str) -> dict:
+    """
+    NEW ROUTE — LLM VISION ONLY
+    Directly uses Groq Vision for identification and extraction.
+    """
+    print(f"\n[Pure Vision Route] Processing: {image_path}")
+    image_data, media_type = encode_image(image_path)
+    
+    # Identify Pass
+    id_response = client.chat.completions.create(
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        messages=[{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}},
+            {"type": "text", "text": "Identify this document type. Return ONLY one of: phonePe_upi, gpay_upi, bhim_upi, electricity_bill, water_bill, rent_receipt. If unknown, return 'unknown'."}
+        ]}],
+        temperature=0,
+    )
+    doc_type = id_response.choices[0].message.content.strip().lower().strip('.').replace(" ", "_")
+    
+    # Retrieve Schema Passively
+    schema_context = retrieval.get_schema_by_type(doc_type)
+    if not schema_context:
+        schema_context = {"document_type": doc_type, "fields": {}}
+
+    return _vision_extract_step(image_data, media_type, schema_context, doc_type)
+
+def _vision_extract_step(image_data, media_type, schema_context, doc_type) -> dict:
+    """Shared LLM extraction logic."""
+    fields_list = ", ".join(schema_context["fields"].keys()) if schema_context["fields"] else "all visible data"
+    
+    prompt = f"""You are a financial document parser.
+Retrieved Schema for '{doc_type}':
+{json.dumps(schema_context, indent=2)}
+
+Instructions:
+1. Extract values for: {fields_list}
+2. For Rent Receipts: 'landlord_name' is the name near the signature at the bottom-right. 'tenant_name' is the name written after 'Received from'.
+3. For Bills: Look at the top-right and top-left header areas for dates (YYYY-MM-DD).
+4. For UPI: Search the entire image for an '@' symbol to find 'upi_id'. Look for bank names in the top/bottom logos.
+5. Amount must be a numeric value.
+6. Return ONLY valid JSON. No conversational text. """
+
     response = client.chat.completions.create(
         model="meta-llama/llama-4-scout-17b-16e-instruct",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{media_type};base64,{image_data}"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": """You are a financial document parser for Indian documents.
-
-Look at this image and extract the following information.
-
-First identify the document type — it will be one of:
-- phonePe_upi
-- gpay_upi  
-- bhim_upi
-- electricity_bill
-- water_bill
-- rent_receipt
-
-Then extract all relevant fields based on document type.
-
-For UPI payments (phonePe_upi, gpay_upi, bhim_upi) extract:
-- amount (number only, no currency symbol)
-- date (as it appears in the document)
-- receiver_name
-- upi_id (format: something@bankname)
-- transaction_id
-- bank_name
-- status (SUCCESS, FAILED, or PENDING)
-
-For electricity_bill extract:
-- amount_due
-- due_date
-- consumer_number
-- units_consumed
-- billing_period
-- discom_name
-
-For water_bill extract:
-- amount_due
-- due_date
-- consumer_number
-- billing_period
-- connection_id
-
-For rent_receipt extract:
-- rent_amount
-- payment_date
-- month_covered
-- landlord_name
-- tenant_name
-- property_address
-
-Rules:
-- Return ONLY a JSON object, no explanation, no markdown, no backticks
-- If a field is not visible in the image, set it to null
-- Amount must be a number like 500.0 not a string like "₹500"
-- Be precise, do not guess or hallucinate values not visible in the image"""
-                    }
-                ]
-            }
-        ],
+        messages=[{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}},
+            {"type": "text", "text": prompt}
+        ]}],
         temperature=0,
     )
 
-    # Step 3 — parse the response
-    # Step 3 — parse the response
-    print("Step 3: Parsing response...")
     raw_response = response.choices[0].message.content.strip()
+    print(f"\nDEBUG - Raw LLM Response for {doc_type}: {raw_response}")
+    return _parse_json_response(raw_response, doc_type)
 
+def _parse_json_response(raw_response: str, doc_type: str) -> dict:
     try:
-        # First try direct parse
+        # Cleanup
+        if "```json" in raw_response:
+            raw_response = raw_response.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_response:
+            raw_response = raw_response.split("```")[1].split("```")[0].strip()
+            
         extracted = json.loads(raw_response)
-    except json.JSONDecodeError:
-        try:
-            # Find first complete JSON object by matching braces
-            start = raw_response.find("{")
-            depth = 0
-            end = start
-            for i, char in enumerate(raw_response[start:], start):
-                if char == "{":
-                    depth += 1
-                elif char == "}":
-                    depth -= 1
-                    if depth == 0:
-                        end = i + 1
-                        break
-            extracted = json.loads(raw_response[start:end])
-        except json.JSONDecodeError as e:
-            print(f"Raw response was: {raw_response}")
-            raise Exception(f"Could not parse Groq response as JSON: {e}")
+    except:
+        start, end = raw_response.find("{"), raw_response.rfind("}") + 1
+        extracted = json.loads(raw_response[start:end])
+        
+    if isinstance(extracted, list) and len(extracted) > 0:
+        extracted = extracted[0]
+    elif not isinstance(extracted, dict):
+        extracted = {}
 
-    # Step 4 — calculate confidence score based on filled fields
+    # Flatten nested 'fields' if present
+    if "fields" in extracted and isinstance(extracted["fields"], dict):
+        extracted = extracted["fields"]
+
     fields = {k: v for k, v in extracted.items() if k != "document_type"}
-    total = len(fields)
     filled = sum(1 for v in fields.values() if v is not None)
-    confidence = round(filled / total, 2) if total > 0 else 0.0
+    confidence = round(filled / len(fields), 2) if fields else 0.0
 
-    result = {
-        "document_type": extracted.get("document_type", "unknown"),
-        "fields": {k: v for k, v in extracted.items() if k != "document_type"},
+    return {
+        "document_type": doc_type,
+        "fields": fields,
         "confidence_score": confidence
     }
-
-    print("Done.")
-    print("=" * 40)
-
-    return result
-
-
-def process_multiple_images(image_paths: list) -> list:
-    """
-    Processes a batch of images — Member 3 needs this for 6 months of documents.
-    
-    Example:
-        results = process_multiple_images([
-            "Documents/jan_gpay.png",
-            "Documents/feb_bhim.jpeg",
-        ])
-    """
-    results = []
-    for path in image_paths:
-        try:
-            result = extract_financial_data(path)
-            results.append(result)
-        except Exception as e:
-            print(f"Failed to process {path}: {e}")
-            results.append({
-                "document_type": "unknown",
-                "fields": {},
-                "confidence_score": 0.0,
-                "error": str(e),
-                "image_path": path
-            })
-    return results
-
-
-# Test end to end
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) > 1:
-        image_path = sys.argv[1]
-    else:
-        image_path = "backend/src/Python_engine/Documents/bhim.jpeg"
-
-    result = extract_financial_data(image_path)
-
-    print("\n=== FINAL EXTRACTED OUTPUT ===")
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-    print("==============================")

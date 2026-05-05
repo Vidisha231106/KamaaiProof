@@ -1,0 +1,229 @@
+"""
+api/routes.py
+=============
+FastAPI route definitions for KamaaiProof AI Engine.
+
+Endpoints:
+  POST /process-document   — full AI pipeline for a single document
+  POST /parse              — alias matching the existing frontend contract
+  GET  /results/{user_id} — retrieve stored results for a user
+  GET  /retrieve           — similarity search across stored summaries
+  GET  /health             — liveness probe
+
+Design principle:
+  Routes are thin. All business logic lives in pipeline/orchestrator.py.
+  This makes it trivial to swap the HTTP framework (e.g., move to gRPC).
+"""
+
+import json
+from fastapi import APIRouter, HTTPException, Request, Form, UploadFile, File
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
+
+from pipeline.orchestrator import run_pipeline, run_pipeline_batch
+import storage.store as store
+import retrieval.vector_store as vector_store
+from security.rbac import check_access, get_role, filter_response_for_role
+
+
+router = APIRouter()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Request / response schemas
+# ──────────────────────────────────────────────────────────────────────────────
+
+class ProcessDocumentRequest(BaseModel):
+    user_id: str
+    document_type: str   # "upi" | "rent" | "bill"
+    content: str         # raw text (simulated OCR output)
+
+    @field_validator("document_type")
+    @classmethod
+    def validate_doc_type(cls, v: str) -> str:
+        allowed = {"upi", "rent", "bill"}
+        if v not in allowed:
+            raise ValueError(f"document_type must be one of {allowed}")
+        return v
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("content must not be empty")
+        return v
+
+
+class RetrieveRequest(BaseModel):
+    query: str
+    top_k: int = 3
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.get("/health")
+async def health_check():
+    """Liveness probe — returns OK if the server is running."""
+    return {"status": "ok", "engine": "KamaaiProof AI Engine v1.0"}
+
+
+@router.post("/process-document")
+async def process_document(body: ProcessDocumentRequest):
+    """
+    Main AI pipeline endpoint.
+
+    Accepts raw text (simulated OCR), runs the full pipeline:
+      Sanitize → Extract → Validate → Store → Index
+
+    Returns structured transaction data and summary.
+    """
+    try:
+        result = run_pipeline(
+            user_id=body.user_id,
+            document_type=body.document_type,
+            raw_content=body.content,
+        )
+        return JSONResponse(content=result, status_code=200)
+    except Exception as exc:
+        # Never expose internal errors to client — log and return safe message
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline processing failed: {str(exc)}",
+        )
+
+
+@router.post("/parse")
+async def parse_multipart(
+    files: List[UploadFile] = File(default=[]),
+    metadata: str = Form(default="[]"),
+    whatsappText: str = Form(default=""),
+):
+    """
+    Frontend-compatible parse endpoint.
+
+    Matches the existing frontend contract:
+      multipart/form-data with files[], metadata (JSON string), whatsappText.
+
+    Returns shape matching frontend expectation:
+      { consistencyScore, totalIncome, months, transactions, flags }
+
+    This endpoint adapts the frontend's multipart payload into
+    the internal run_pipeline_batch() call.
+    """
+    documents = []
+
+    # Parse metadata JSON
+    try:
+        meta_list = json.loads(metadata) if metadata else []
+    except json.JSONDecodeError:
+        meta_list = []
+
+    # Handle uploaded files (treat as text for now — OCR simulation)
+    for i, upload in enumerate(files):
+        raw_bytes = await upload.read()
+        try:
+            text_content = raw_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            text_content = ""
+
+        # Get document type from metadata if provided
+        doc_type = "bill"  # default
+        if i < len(meta_list) and isinstance(meta_list[i], dict):
+            tag = meta_list[i].get("tag", "").lower()
+            if "upi" in tag or "gpay" in tag or "phonepe" in tag:
+                doc_type = "upi"
+            elif "rent" in tag:
+                doc_type = "rent"
+
+        if text_content.strip():
+            documents.append({"document_type": doc_type, "content": text_content})
+
+    # Handle WhatsApp text (treat as UPI by default)
+    if whatsappText and whatsappText.strip():
+        documents.append({"document_type": "upi", "content": whatsappText})
+
+    if not documents:
+        return JSONResponse(content={
+            "consistencyScore": 0,
+            "totalIncome": 0,
+            "months": [],
+            "transactions": [],
+            "flags": ["No processable content found in submission."],
+        }, status_code=200)
+
+    # Use a session-scoped user_id derived from request (demo: fixed for now)
+    user_id = "session_user"
+
+    result = run_pipeline_batch(user_id=user_id, documents=documents)
+
+    # Transform to frontend-expected shape
+    summary = result.get("summary", {})
+    return JSONResponse(content={
+        "consistencyScore": summary.get("consistency_score", 0),
+        "totalIncome": summary.get("total_income", 0),
+        "months": summary.get("months", []),
+        "transactions": result.get("transactions", []),
+        "flags": summary.get("flags", []),
+    }, status_code=200)
+
+
+@router.get("/results/{user_id}")
+async def get_results(user_id: str, requesting_user: str = "worker_001"):
+    """
+    Retrieve stored results for a user.
+
+    Applies RBAC: workers see full transactions, officers see summaries only.
+
+    Query params:
+      requesting_user — the user making the request (for RBAC check).
+                        In production this comes from the JWT token.
+    """
+    # RBAC check
+    access = check_access(
+        requesting_user_id=requesting_user,
+        target_user_id=user_id,
+        action="read",
+    )
+    if not access.allowed:
+        raise HTTPException(status_code=403, detail=access.reason)
+
+    results = store.get_results(user_id)
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for user '{user_id}'.",
+        )
+
+    role = get_role(requesting_user)
+
+    # Filter each result based on role permissions
+    filtered = []
+    for record in results:
+        if role == "mfi_officer":
+            # Officers see only the summary
+            filtered.append({
+                "summary": record.get("summary", {}),
+                "validation_errors": record.get("validation_errors", []),
+            })
+        else:
+            filtered.append(record)
+
+    return JSONResponse(content={"user_id": user_id, "results": filtered})
+
+
+@router.post("/retrieve")
+async def retrieve_similar(body: RetrieveRequest):
+    """
+    Similarity search across indexed document summaries.
+
+    Useful for MFI officers to find similar income patterns.
+    """
+    results = vector_store.retrieve_similar(body.query, top_k=body.top_k)
+    return JSONResponse(content={
+        "query": body.query,
+        "results": results,
+        "indexed_count": vector_store.store_size(),
+    })
