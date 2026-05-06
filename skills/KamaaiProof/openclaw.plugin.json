@@ -1,0 +1,9 @@
+{
+  "id": "kamaaiproof",
+  "name": "KamaaiProof",
+  "version": "1.0.0",
+  "description": "KamaaiProof Document Extraction Skill",
+  "type": "skill",
+  "capabilities": ["extract"],
+  "entry": "manifest.json"
+}

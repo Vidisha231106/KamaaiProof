@@ -19,12 +19,13 @@ import json
 from fastapi import APIRouter, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from pipeline.orchestrator import run_pipeline, run_pipeline_batch
 import storage.store as store
 import retrieval.vector_store as vector_store
 from security.rbac import check_access, get_role, filter_response_for_role
+from extraction.openclaw_gateway import OpenClawGateway
 
 
 router = APIRouter()
@@ -58,6 +59,12 @@ class ProcessDocumentRequest(BaseModel):
 class RetrieveRequest(BaseModel):
     query: str
     top_k: int = 3
+
+
+class SkillInvokeRequest(BaseModel):
+    """Request to invoke an OpenClaw skill."""
+    skill: str
+    input: Dict[str, Any] = {}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -227,3 +234,71 @@ async def retrieve_similar(body: RetrieveRequest):
         "results": results,
         "indexed_count": vector_store.store_size(),
     })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OpenClaw Gateway Routes
+# ──────────────────────────────────────────────────────────────────────────────
+
+_gateway = OpenClawGateway()
+
+
+@router.get("/openclaw/skills")
+async def list_openclaw_skills():
+    """
+    List all available OpenClaw skills.
+
+    Returns:
+      { "skills": ["KamaaiProof", ...] }
+    """
+    try:
+        skills = _gateway.list_skills()
+        return JSONResponse(content={"skills": skills})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/openclaw/skills/{skill_name}")
+async def get_skill_info(skill_name: str):
+    """
+    Get metadata for a specific OpenClaw skill.
+
+    Returns skill manifest (name, version, description, capabilities, entry_point, etc.)
+    """
+    try:
+        skill_info = _gateway.get_skill_info(skill_name)
+        return JSONResponse(content={"skill": skill_name, "manifest": skill_info})
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/openclaw/invoke")
+async def invoke_openclaw_skill(body: SkillInvokeRequest):
+    """
+    Invoke an OpenClaw skill with input data.
+
+    Body:
+      {
+        "skill": "KamaaiProof",
+        "input": { "image_path": "..." } or other skill-specific input
+      }
+
+    Returns:
+      {
+        "status": "success" | "error",
+        "skill": "KamaaiProof",
+        "result": { ... },
+        "error": "..." (if status == "error")
+      }
+    """
+    try:
+        result = _gateway.invoke_skill(body.skill, body.input)
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        return JSONResponse(content=result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

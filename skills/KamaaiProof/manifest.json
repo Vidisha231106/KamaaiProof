@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "description": "Financial document parsing and Work Passport generation for informal workers.",
   "skill_path": "SKILL.md",
-  "entry_point": "../backend/src/Python_engine/pi_engine.py",
+  "entry_point": "../../backend/src/Python_engine/pi_engine.py",
   "capabilities": [
     "vision_extraction",
     "consistency_scoring",

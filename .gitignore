@@ -13,3 +13,5 @@ backend/src/python_engine/documents/
 # Logs and OS files
 *.log
 .DS_Store
+node_modules
+

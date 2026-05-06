@@ -15,11 +15,13 @@ Architecture note:
     ... → Extract → OpenClaw_Enrich → Validate → ...
 """
 
+import os
 import statistics
 from datetime import date
 
 from sanitization.sanitizer import sanitize
-from extraction.extractor import extract, Transaction
+from extraction.extractor import Transaction
+from extraction.base_extractor import MockExtractor, OpenClawExtractor, FallbackExtractor
 from validation.validator import validate, ValidationError
 import storage.store as store
 import retrieval.vector_store as vector_store
@@ -93,6 +95,7 @@ def run_pipeline(
     user_id: str,
     document_type: str,
     raw_content: str,
+    use_openclaw: bool = True
 ) -> dict:
     """
     Execute the full AI pipeline for a single document submission.
@@ -100,7 +103,7 @@ def run_pipeline(
     Steps
     -----
     1. Sanitize  — strip PII from raw_content
-    2. Extract   — parse structured fields from sanitized text
+    2. Extract   — parse structured fields from sanitized text (using OpenClaw or Mock)
     3. Validate  — apply business rules, collect errors
     4. Store     — persist structured result (no raw text)
     5. Index     — embed sanitized summary into vector store
@@ -117,7 +120,43 @@ def run_pipeline(
     pii_categories = san_result.pii_found
 
     # ── Step 2: Extract ───────────────────────────────────────────────────
-    transaction: Transaction = extract(sanitized_text, document_type)
+    # Initialize Extractor with Fallback
+    mock = MockExtractor(document_type=document_type)
+    
+    if use_openclaw:
+        claw = OpenClawExtractor()
+        extractor = FallbackExtractor(claw, mock)
+    else:
+        extractor = mock
+
+    extraction_result = extractor.run(sanitized_text)
+    
+    # Adapt to Transaction objects for the rest of the pipeline
+    extracted_txns = extraction_result.get("transactions", [])
+    if not extracted_txns:
+        # Create an empty transaction if none found, to satisfy downstream types
+        transaction = Transaction(
+            id="error-tx",
+            source=document_type,
+            amount=None,
+            date=None,
+            transaction_type="unknown",
+            description="Extraction failed or returned no data",
+            confidence=0.0
+        )
+    else:
+        # For single document pipeline, we take the first transaction
+        data = extracted_txns[0]
+        # Handle cases where OpenClaw might not return all fields
+        transaction = Transaction(
+            id=data.get("id", f"tx-{os.urandom(4).hex()}"),
+            source=data.get("source", document_type),
+            amount=data.get("amount"),
+            date=data.get("date"),
+            transaction_type=data.get("transaction_type", "unknown"),
+            description=data.get("description", f"Extracted from {document_type}"),
+            confidence=data.get("confidence", 0.7)
+        )
 
     # ── Step 3: Validate ──────────────────────────────────────────────────
     errors: list[ValidationError] = validate(transaction)
@@ -161,17 +200,39 @@ def run_pipeline_batch(
 
     for doc in documents:
         san_result = sanitize(doc["content"])
-        txn = extract(san_result.sanitized_text, doc["document_type"])
-        errors = validate(txn)
-        all_transactions.append(txn)
-        all_errors.extend(errors)
+        
+        # Initialize Extractor for this document type
+        mock = MockExtractor(document_type=doc["document_type"])
+        claw = OpenClawExtractor()
+        extractor = FallbackExtractor(claw, mock)
+        
+        extraction_result = extractor.run(san_result.sanitized_text)
+        extracted_txns = extraction_result.get("transactions", [])
+        
+        if not extracted_txns:
+            continue
+            
+        # Convert dict to Transaction model
+        for data in extracted_txns:
+            txn = Transaction(
+                id=data.get("id", f"tx-{os.urandom(4).hex()}"),
+                source=data.get("source", doc["document_type"]),
+                amount=data.get("amount"),
+                date=data.get("date"),
+                transaction_type=data.get("transaction_type", "unknown"),
+                description=data.get("description", "Extracted transaction"),
+                confidence=data.get("confidence", 0.7)
+            )
+            errors = validate(txn)
+            all_transactions.append(txn)
+            all_errors.extend(errors)
 
-        # Index each document individually
-        summary_text = (
-            f"{doc['document_type']} | amount={txn.amount} | "
-            f"date={txn.date} | type={txn.transaction_type}"
-        )
-        vector_store.index_summary(user_id, summary_text, {"doc_type": doc["document_type"]})
+            # Index each document individually
+            summary_text = (
+                f"{doc['document_type']} | amount={txn.amount} | "
+                f"date={txn.date} | type={txn.transaction_type}"
+            )
+            vector_store.index_summary(user_id, summary_text, {"doc_type": doc["document_type"]})
 
     summary = _build_summary(all_transactions, user_id)
     store.save(user_id, all_transactions, summary, all_errors)

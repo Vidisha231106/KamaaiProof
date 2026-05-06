@@ -1,4 +1,4 @@
-# Skill: Financial Document Extraction (KamaaiProof)
+# KamaaiProof
 
 ## Overview
 This skill enables an AI agent to process messy, informal financial documents (UPI screenshots, utility bills, rent receipts) and extract structured JSON data with high precision. It transitions from legacy OCR-based retrieval to a **Vision-First OpenClaw pipeline** optimized for the Indian informal economy.

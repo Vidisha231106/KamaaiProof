@@ -1,0 +1,9 @@
+{
+  "name": "kamaaiproof",
+  "version": "1.0.0",
+  "description": "KamaaiProof Document Extraction Skill",
+  "main": "index.js",
+  "openclaw": {
+    "extensions": ["manifest.json"]
+  }
+}

@@ -161,3 +161,70 @@ Backend implementation is scaffolded. See:
 - `docs/02-LangChain-Parsing-Spec.md`: parsing and chain workflow guide
 - `docs/03-Scoring-Firebase-PDF-Spec.md`: scoring, Firebase, and PDF guide
 - `docs/04-DevOps-QA-Spec.md`: infra, QA, and release guide
+
+---
+
+## OpenClaw Gateway: Features & Testing Guide
+
+### Features
+
+- **Dynamic Skill Discovery:** Auto-detects all skills in `skills/` (e.g., KamaaiProof).
+- **Skill Metadata & Manifest Loading:** Reads each skill’s manifest for capabilities and entry points.
+- **Dynamic Skill Invocation:** Loads and runs skill code on demand via Python module import.
+- **HTTP API Endpoints:** Exposes `/openclaw/skills`, `/openclaw/skills/{skill_name}`, and `/openclaw/invoke` for skill management and execution.
+- **Integration with Pipeline:** Can be used directly in the pipeline or via API for document extraction, scoring, and validation.
+
+### What Can Be Tested
+
+- **Skill Listing:** See all available skills via API or CLI.
+- **Skill Metadata:** Fetch manifest and config for any skill.
+- **Skill Invocation:** Run a skill (e.g., KamaaiProof) on a document and get structured results.
+- **End-to-End Pipeline:** Process a document from upload to extraction, validation, and summary via API.
+
+### How to Test End-to-End
+
+1. **Start the Backend:**
+   ```bash
+   cd ai-engine
+   source venv/bin/activate
+   uvicorn main:app --reload --port 8000
+   ```
+
+2. **List Skills:**
+   ```bash
+   curl http://localhost:8000/openclaw/skills
+   # or
+   python3 ai-engine/list_openclaw_skills.py
+   ```
+
+3. **Get Skill Info:**
+   ```bash
+   curl http://localhost:8000/openclaw/skills/KamaaiProof
+   ```
+
+4. **Invoke a Skill:**
+   ```bash
+   curl -X POST http://localhost:8000/openclaw/invoke \
+     -H "Content-Type: application/json" \
+     -d '{
+       "skill": "KamaaiProof",
+       "input": {"image_path": "path/to/image.jpg"}
+     }'
+   ```
+
+5. **Run Automated API Tests:**
+   ```bash
+   python3 ai-engine/test_gateway_api.py
+   ```
+
+6. **Validate Results:**
+   - Check for `"status": "success"` and review the `"result"` field for extracted transactions, summary, and validation.
+   - For errors, review the `"error"` field for missing dependencies or misconfigurations.
+
+### Validation
+
+- **Manual:** Inspect API responses for expected fields and values.
+- **Automated:** Use `test_gateway_api.py` for regression and integration checks.
+- **Pipeline:** Use `OpenClawExtractor` in your pipeline code to invoke skills programmatically.
+
+---
