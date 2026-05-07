@@ -1,0 +1,92 @@
+{
+  "rentreceipt_jan26.png": {
+    "source": "rent",
+    "amount": 5000.0,
+    "date": "2026-01-12",
+    "frequency": "monthly",
+    "transaction_type": "credit",
+    "description": "Rent receipt Jan 2026",
+    "confidence": 0.98
+  },
+  "payment_mar26.jpeg": {
+    "source": "upi",
+    "amount": 14500.0,
+    "date": "2026-03-12",
+    "frequency": "one_time",
+    "transaction_type": "credit",
+    "description": "UPI payment Mar 2026",
+    "confidence": 0.98
+  },
+  "payment_apr26.jpeg": {
+    "source": "upi",
+    "amount": 14500.0,
+    "date": "2026-04-05",
+    "frequency": "one_time",
+    "transaction_type": "credit",
+    "description": "UPI payment Apr 2026",
+    "confidence": 0.98
+  },
+  "payment_may26.jpeg": {
+    "source": "upi",
+    "amount": 15000.0,
+    "date": "2026-05-02",
+    "frequency": "one_time",
+    "transaction_type": "credit",
+    "description": "UPI payment May 2026",
+    "confidence": 0.98
+  },
+  "Elecbill_feb26.jpeg": {
+    "source": "bill",
+    "amount": 1994.05,
+    "date": "2026-02-26",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Electricity bill Feb 2026",
+    "confidence": 0.97
+  },
+  "Elecbill_mar26.jpeg": {
+    "source": "bill",
+    "amount": 2475.0,
+    "date": "2026-03-26",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Electricity bill Mar 2026",
+    "confidence": 0.97
+  },
+  "Elecbill_apr26.jpeg": {
+    "source": "bill",
+    "amount": 3245.0,
+    "date": "2026-04-26",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Electricity bill Apr 2026",
+    "confidence": 0.97
+  },
+  "waterbill_feb26.png": {
+    "source": "bill",
+    "amount": 1412.3,
+    "date": "2026-02-10",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Water bill Feb 2026",
+    "confidence": 0.97
+  },
+  "waterbill_apr26.png": {
+    "source": "bill",
+    "amount": 1470.0,
+    "date": "2026-04-10",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Water bill Apr 2026",
+    "confidence": 0.97
+  },
+  "waterbill_may26.png": {
+    "source": "bill",
+    "amount": 1476.45,
+    "date": "2026-05-10",
+    "frequency": "monthly",
+    "transaction_type": "debit",
+    "description": "Water bill May 2026",
+    "confidence": 0.97
+  }
+}

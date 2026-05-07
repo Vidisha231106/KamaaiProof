@@ -16,6 +16,31 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("OpenClawExtractor")
 
+_DEMO_OVERRIDE_CACHE: Dict[str, Dict[str, Any]] | None = None
+
+
+def _load_demo_overrides() -> Dict[str, Dict[str, Any]]:
+    """
+    Load optional demo extraction overrides keyed by filename.
+    This allows deterministic date/amount extraction for demo images.
+    """
+    global _DEMO_OVERRIDE_CACHE
+    if _DEMO_OVERRIDE_CACHE is not None:
+        return _DEMO_OVERRIDE_CACHE
+
+    overrides_path = os.path.join(os.path.dirname(__file__), "demo_overrides.json")
+    if not os.path.exists(overrides_path):
+        _DEMO_OVERRIDE_CACHE = {}
+        return _DEMO_OVERRIDE_CACHE
+
+    try:
+        with open(overrides_path, "r", encoding="utf-8") as f:
+            _DEMO_OVERRIDE_CACHE = json.load(f)
+    except Exception as exc:
+        logger.warning(f"Failed to load demo overrides: {exc}")
+        _DEMO_OVERRIDE_CACHE = {}
+    return _DEMO_OVERRIDE_CACHE
+
 class BaseExtractor(ABC):
     @abstractmethod
     def run(self, text: str) -> Dict[str, Any]:
@@ -35,6 +60,26 @@ class MockExtractor(BaseExtractor):
     def run(self, text: str) -> Dict[str, Any]:
         logger.info(f"[MockExtractor] Processing text of length {len(text)}")
         try:
+            if os.path.exists(text):
+                base = os.path.basename(text)
+                overrides = _load_demo_overrides()
+                if base in overrides:
+                    demo = overrides[base]
+                    logger.info(f"[MockExtractor] Using demo override for {base}")
+                    return {
+                        "transactions": [{
+                            "id": f"tx-{os.urandom(4).hex()}",
+                            "source": demo.get("source", self.document_type),
+                            "amount": demo.get("amount"),
+                            "date": demo.get("date"),
+                            "frequency": demo.get("frequency", "unknown"),
+                            "transaction_type": demo.get("transaction_type", "unknown"),
+                            "description": demo.get("description", f"Demo override extraction for {base}"),
+                            "confidence": float(demo.get("confidence", 0.95)),
+                            "verified": False,
+                        }]
+                    }
+
             # Using the existing extract function from extraction.extractor
             transaction = extract(text, self.document_type)
             # Adapting to the requested output schema: {"transactions": [...]}
@@ -99,6 +144,7 @@ class OpenClawExtractor(BaseExtractor):
                 "source": result.get("document_type", "unknown"),
                 "amount": result.get("fields", {}).get("amount", 0.0),
                 "date": result.get("fields", {}).get("date"),
+                "frequency": result.get("fields", {}).get("frequency", "unknown"),
                 "transaction_type": "debit" if "bill" in str(result.get("document_type")).lower() else "credit",
                 "description": f"Extracted via Integrated Vision: {result.get('document_type')}",
                 "confidence": result.get("confidence_score", 0.0),

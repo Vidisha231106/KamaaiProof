@@ -48,8 +48,8 @@ def test_gateway():
     print("\n[Test 3] Invoke KamaaiProof Skill")
     print("-" * 80)
     input_data = {
-        "image_path": "backend/src/Python_engine/Documents/rent_receipt_1.jpeg",
-        "document_type": "rent"
+        "image_path": "backend/src/Python_engine/Documents/bhim.jpeg",
+        "document_type": "upi"
     }
     result = gateway.invoke_skill("KamaaiProof", input_data)
     print(f"Invocation result:\n{result}")

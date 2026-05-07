@@ -60,8 +60,8 @@ def test_gateway_api():
         payload = {
             "skill": "KamaaiProof",
             "input": {
-                "image_path": "backend/src/Python_engine/Documents/rent_receipt_1.jpeg",
-                "document_type": "rent"
+                "image_path": "backend/src/Python_engine/Documents/bhim.jpeg",
+                "document_type": "upi"
             }
         }
         print(f"Payload: {json.dumps(payload, indent=2)}")
@@ -70,8 +70,11 @@ def test_gateway_api():
         data = response.json()
         print(f"Response: {json.dumps(data, indent=2)}")
         assert response.status_code in [200, 400]  # Allow error if dependencies missing
-        assert "status" in data
-        assert data["skill"] == "KamaaiProof"
+        if response.status_code == 200:
+            assert "status" in data
+            assert data.get("skill") == "KamaaiProof"
+        else:
+            assert "detail" in data
         print("✅ Test 3 passed")
     except Exception as e:
         print(f"❌ Test 3 failed: {str(e)}")

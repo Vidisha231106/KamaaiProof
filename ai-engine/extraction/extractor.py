@@ -41,6 +41,7 @@ class Transaction(BaseModel):
     source: str                    # document_type tag (upi / rent / bill)
     amount: Optional[float]        # in INR
     date: Optional[str]            # ISO 8601: YYYY-MM-DD
+    frequency: Optional[str] = None  # "daily" | "weekly" | "monthly" | "one_time" | "unknown"
     transaction_type: Optional[str]  # "credit" | "debit" | "unknown"
     description: str               # sanitized description snippet
     confidence: float              # 0.0 – 1.0 extraction confidence
@@ -192,6 +193,30 @@ def _build_description(text: str, doc_type: str) -> str:
     return snippet or f"{doc_type} document"
 
 
+def _infer_frequency(text: str, doc_type: str, date_str: Optional[str]) -> str:
+    """
+    Infer payment frequency from explicit language, with document-type fallback.
+    """
+    text_l = text.lower()
+
+    if any(k in text_l for k in ["daily", "per day", "every day"]):
+        return "daily"
+    if any(k in text_l for k in ["weekly", "per week", "every week"]):
+        return "weekly"
+    if any(k in text_l for k in ["monthly", "per month", "every month"]):
+        return "monthly"
+
+    # Rent/bills are generally recurring monthly obligations.
+    if doc_type in {"rent", "bill"} and date_str:
+        return "monthly"
+
+    # For UPI screenshots and one-off receipts, default to one-time.
+    if doc_type == "upi":
+        return "one_time"
+
+    return "unknown"
+
+
 def _compute_confidence(
     amount: Optional[float],
     date_str: Optional[str],
@@ -231,6 +256,7 @@ def extract(sanitized_text: str, document_type: str) -> Transaction:
     amount, amount_conf = _parse_amount(sanitized_text)
     date_str = _parse_date(sanitized_text)
     tx_type, type_conf = _infer_transaction_type(sanitized_text, document_type)
+    frequency = _infer_frequency(sanitized_text, document_type, date_str)
     confidence = _compute_confidence(amount, date_str, type_conf)
     description = _build_description(sanitized_text, document_type)
 
@@ -239,6 +265,7 @@ def extract(sanitized_text: str, document_type: str) -> Transaction:
         source=document_type,
         amount=amount,
         date=date_str,
+        frequency=frequency,
         transaction_type=tx_type,
         description=description,
         confidence=confidence,

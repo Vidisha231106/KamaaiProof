@@ -17,7 +17,7 @@ Architecture note:
 
 import os
 import statistics
-from datetime import date
+from datetime import date, datetime
 
 from sanitization.sanitizer import sanitize
 from extraction.extractor import Transaction
@@ -44,17 +44,61 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
     total_income = sum(t.amount for t in credit_txns)
     total_spend  = sum(t.amount for t in debit_txns)
 
-    # Months with at least one credit transaction
-    months: set[str] = set()
+    # Strict 6-month rolling window scoring
+    dated_credit_txns = []
     for t in credit_txns:
-        if t.date:
-            months.add(t.date[:7])  # YYYY-MM
+        if not t.date:
+            continue
+        try:
+            parsed = datetime.fromisoformat(t.date).date()
+            dated_credit_txns.append((t, parsed))
+        except ValueError:
+            continue
 
-    # Consistency score: proportion of transactions with both amount + date
-    complete = [t for t in transactions if t.amount and t.date]
-    consistency_score = (
-        int(len(complete) / len(transactions) * 100) if transactions else 0
-    )
+    anchor_date = max((d for _, d in dated_credit_txns), default=date.today())
+
+    def month_start(d: date) -> date:
+        return d.replace(day=1)
+
+    def shift_month(d: date, delta: int) -> date:
+        month_idx = (d.year * 12 + (d.month - 1)) + delta
+        y = month_idx // 12
+        m = (month_idx % 12) + 1
+        return date(y, m, 1)
+
+    anchor_month = month_start(anchor_date)
+    window_starts = [shift_month(anchor_month, -i) for i in range(5, -1, -1)]
+    window_months = [m.strftime("%Y-%m") for m in window_starts]
+
+    monthly_income: dict[str, float] = {m: 0.0 for m in window_months}
+    for t, parsed in dated_credit_txns:
+        bucket = parsed.strftime("%Y-%m")
+        if bucket in monthly_income:
+            monthly_income[bucket] += float(t.amount or 0.0)
+
+    covered_months = [m for m, amount in monthly_income.items() if amount > 0]
+    missing_months = [m for m in window_months if m not in covered_months]
+
+    # Score out of 100
+    # - 70 points for month coverage across 6 months
+    # - 30 points for stability of monthly income across covered months
+    coverage_score = (len(covered_months) / 6) * 70
+
+    incomes = [monthly_income[m] for m in covered_months]
+    if len(incomes) >= 2:
+        mean_income = statistics.mean(incomes)
+        if mean_income > 0:
+            std_income = statistics.pstdev(incomes)
+            coeff_var = std_income / mean_income
+            stability_score = max(0.0, 30 * (1 - min(coeff_var, 1.0)))
+        else:
+            stability_score = 0.0
+    elif len(incomes) == 1:
+        stability_score = 10.0
+    else:
+        stability_score = 0.0
+
+    consistency_score = int(round(min(100.0, coverage_score + stability_score)))
 
     # Average confidence
     confidences = [t.confidence for t in transactions]
@@ -72,15 +116,21 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
         flags.append(
             f"{len(unknown_type)} transaction(s) could not be classified as credit or debit."
         )
-    if not months:
+    if not covered_months:
         flags.append("No dated credit transactions found — income period cannot be determined.")
+    if missing_months:
+        flags.append(
+            f"Income evidence missing in {len(missing_months)} month(s) within the 6-month window."
+        )
 
     return {
         "user_id": user_id,
         "total_income": round(total_income, 2),
         "total_spend": round(total_spend, 2),
         "consistency_score": consistency_score,
-        "months": sorted(months),
+        "months": covered_months,
+        "window_months": window_months,
+        "monthly_income": {k: round(v, 2) for k, v in monthly_income.items()},
         "transaction_count": len(transactions),
         "avg_confidence": avg_confidence,
         "flags": flags,
@@ -140,6 +190,7 @@ def run_pipeline(
             source=document_type,
             amount=None,
             date=None,
+            frequency="unknown",
             transaction_type="unknown",
             description="Extraction failed or returned no data",
             confidence=0.0
@@ -153,6 +204,7 @@ def run_pipeline(
             source=data.get("source", document_type),
             amount=data.get("amount"),
             date=data.get("date"),
+            frequency=data.get("frequency", "unknown"),
             transaction_type=data.get("transaction_type", "unknown"),
             description=data.get("description", f"Extracted from {document_type}"),
             confidence=data.get("confidence", 0.7)
@@ -219,6 +271,7 @@ def run_pipeline_batch(
                 source=data.get("source", doc["document_type"]),
                 amount=data.get("amount"),
                 date=data.get("date"),
+                frequency=data.get("frequency", "unknown"),
                 transaction_type=data.get("transaction_type", "unknown"),
                 description=data.get("description", "Extracted transaction"),
                 confidence=data.get("confidence", 0.7)
