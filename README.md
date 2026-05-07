@@ -164,67 +164,98 @@ Backend implementation is scaffolded. See:
 
 ---
 
-## OpenClaw Gateway: Features & Testing Guide
+## OpenClaw Gateway: Features, Integration, and Full Test Guide
 
 ### Features
 
-- **Dynamic Skill Discovery:** Auto-detects all skills in `skills/` (e.g., KamaaiProof).
-- **Skill Metadata & Manifest Loading:** Reads each skill’s manifest for capabilities and entry points.
-- **Dynamic Skill Invocation:** Loads and runs skill code on demand via Python module import.
-- **HTTP API Endpoints:** Exposes `/openclaw/skills`, `/openclaw/skills/{skill_name}`, and `/openclaw/invoke` for skill management and execution.
-- **Integration with Pipeline:** Can be used directly in the pipeline or via API for document extraction, scoring, and validation.
+- **Dynamic Skill Discovery:** Auto-detects all skills in `skills/` (e.g., `KamaaiProof`).
+- **Skill Manifest Loading:** Reads skill metadata, entry points, and capabilities.
+- **Dynamic Invocation:** Runs skill entry points through the OpenClaw gateway.
+- **HTTP API Endpoints:** Exposes `/openclaw/skills`, `/openclaw/skills/{skill_name}`, and `/openclaw/invoke`.
+- **Pipeline Integration:** `OpenClawExtractor` is wired into `run_pipeline()` and `run_pipeline_batch()`.
+- **6-Month Scoring Output:** Summary includes `consistency_score`, `window_months`, and `monthly_income`.
+- **Demo Override Mode:** Optional deterministic extraction map for demo docs in `ai-engine/extraction/demo_overrides.json`.
 
-### What Can Be Tested
+### Current Integration Points
 
-- **Skill Listing:** See all available skills via API or CLI.
-- **Skill Metadata:** Fetch manifest and config for any skill.
-- **Skill Invocation:** Run a skill (e.g., KamaaiProof) on a document and get structured results.
-- **End-to-End Pipeline:** Process a document from upload to extraction, validation, and summary via API.
+- OpenClaw routes: `ai-engine/api/routes.py`
+- Gateway implementation: `ai-engine/extraction/openclaw_gateway.py`
+- Extractor integration + fallback: `ai-engine/extraction/base_extractor.py`
+- 6-month scoring logic: `ai-engine/pipeline/orchestrator.py`
+- Demo scoring runner: `ai-engine/tests/test_demo_scoring.py`
 
-### How to Test End-to-End
+### One-Time Setup
 
-1. **Start the Backend:**
+Use Python dependencies from both `ai-engine` and `backend`.
+
+```bash
+python -m pip install -r ai-engine/requirements.txt
+python -m pip install -r backend/requirements.txt
+```
+
+Important compatibility pin:
+- `httpx` must be `<0.28.0` for current Groq/OpenClaw path.
+
+Verify:
+```bash
+python -c "import httpx; print(httpx.__version__)"
+```
+
+### End-to-End Test (OpenClaw + API + Pipeline)
+
+1. **Start API server**
    ```bash
    cd ai-engine
-   source venv/bin/activate
-   uvicorn main:app --reload --port 8000
+   python -m uvicorn main:app --port 8000
    ```
 
-2. **List Skills:**
+2. **Run OpenClaw API integration tests**
    ```bash
-   curl http://localhost:8000/openclaw/skills
-   # or
-   python3 ai-engine/list_openclaw_skills.py
+   cd ..
+   python ai-engine/test_gateway_api.py
+   python ai-engine/test_openclaw_gateway.py
+   python ai-engine/tests/test_openclaw.py
    ```
 
-3. **Get Skill Info:**
-   ```bash
-   curl http://localhost:8000/openclaw/skills/KamaaiProof
-   ```
+3. **What to expect**
+   - Skill listing and skill info should pass.
+   - Pipeline tests should complete and print summary output.
+   - If Groq rate-limits or runtime deps fail, fallback path should still keep pipeline functional.
 
-4. **Invoke a Skill:**
-   ```bash
-   curl -X POST http://localhost:8000/openclaw/invoke \
-     -H "Content-Type: application/json" \
-     -d '{
-       "skill": "KamaaiProof",
-       "input": {"image_path": "path/to/image.jpg"}
-     }'
-   ```
+### Demo Scoring Test (Recommended for handoff)
 
-5. **Run Automated API Tests:**
-   ```bash
-   python3 ai-engine/test_gateway_api.py
-   ```
+For the mixed demo documents in `backend/src/Python_engine/Documents`, run:
 
-6. **Validate Results:**
-   - Check for `"status": "success"` and review the `"result"` field for extracted transactions, summary, and validation.
-   - For errors, review the `"error"` field for missing dependencies or misconfigurations.
+```bash
+python ai-engine/tests/test_demo_scoring.py
+```
 
-### Validation
+This prints:
+- `total_income`
+- `total_spend`
+- `consistency_score`
+- `months`
+- `window_months` (strict 6-month window)
+- `monthly_income`
+- `flags`
 
-- **Manual:** Inspect API responses for expected fields and values.
-- **Automated:** Use `test_gateway_api.py` for regression and integration checks.
-- **Pipeline:** Use `OpenClawExtractor` in your pipeline code to invoke skills programmatically.
+Use this summary JSON as the contract for PDF work.
+
+### OpenClaw Invocation Example
+
+```bash
+python -c "import httpx, json; payload={'skill':'KamaaiProof','input':{'image_path':'backend/src/Python_engine/Documents/payment_may26.jpeg','document_type':'upi'}}; r=httpx.post('http://127.0.0.1:8000/openclaw/invoke', json=payload, timeout=30); print(r.status_code); print(json.dumps(r.json(), indent=2))"
+```
+
+### Troubleshooting
+
+- **`Client.__init__() got an unexpected keyword argument 'proxies'`**
+  - Ensure `httpx` is pinned to `<0.28.0`, then reinstall requirements.
+- **Skill not found**
+  - Verify `skills/KamaaiProof/manifest.json` exists and skill name matches.
+- **Invocation returns rate-limit / transient API errors**
+  - Re-run the request; demo scoring can continue via fallback/override path.
+- **Need deterministic demo outputs**
+  - Edit `ai-engine/extraction/demo_overrides.json` for filename-level date/amount control.
 
 ---
