@@ -24,7 +24,8 @@ import base64
 from datetime import date, datetime
 from typing import Optional
 from pydantic import BaseModel, field_validator
-from groq import Groq
+# groq is imported lazily inside functions that need it (get_groq_client, extract_with_pure_vision)
+# so the module loads cleanly even when groq is not installed or GROQ_API_KEY is absent.
 from dateutil import parser as dateutil_parser
 from dotenv import load_dotenv
 
@@ -279,9 +280,12 @@ def extract(sanitized_text: str, document_type: str) -> Transaction:
 
 def get_groq_client():
     """Lazy initialization of the Groq client."""
+    try:
+        from groq import Groq  # lazy import — optional dependency
+    except ImportError:
+        return None
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        logger.error("GROQ_API_KEY not found in environment.")
         return None
     return Groq(api_key=api_key)
 
