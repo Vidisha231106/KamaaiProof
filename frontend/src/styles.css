@@ -1235,6 +1235,7 @@ tbody tr:hover {
   }
 }
 
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1245,3 +1246,33 @@ tbody tr:hover {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── PDF download button ─────────────────────────────────────────────────── */
+
+.btn-pdf {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--secondary), #000 8%),
+    color-mix(in srgb, var(--secondary), var(--success) 35%)
+  );
+  color: #ffffff;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--secondary), transparent 60%);
+  text-decoration: none;
+}
+
+.btn-pdf:hover:not(:disabled) {
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--secondary), transparent 50%);
+  transform: translateY(-1px);
+}
+
+/* Smaller spinner variant used inside the PDF button loading state */
+.spinner-sm {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: transparent;
+  animation: spin 760ms linear infinite;
+  flex-shrink: 0;
+}
+

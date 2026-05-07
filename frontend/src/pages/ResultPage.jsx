@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoanRealityCalculator from "../components/LoanRealityCalculator";
 
@@ -17,6 +17,95 @@ function scoreTone(score) {
   if (score >= 50) return "score-mid";
   return "score-risk";
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PdfDownloadButton
+// Dynamically imports @react-pdf/renderer + WorkPassport after mount.
+// This keeps them out of the Vite initial bundle graph, preventing the
+// canvas/ESM pre-bundler crash that @react-pdf/renderer v4 causes in Vite 5.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PdfDownloadButton({ result }) {
+  const [pdfReady, setPdfReady] = useState(false);
+  const [PdfLink, setPdfLink] = useState(null);
+  const [WorkPassportDoc, setWorkPassportDoc] = useState(null);
+  const [pdfError, setPdfError] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      import("@react-pdf/renderer"),
+      import("../components/WorkPassport"),
+    ])
+      .then(([rendererModule, passportModule]) => {
+        setPdfLink(() => rendererModule.PDFDownloadLink);
+        setWorkPassportDoc(() => passportModule.WorkPassport);
+        setPdfReady(true);
+      })
+      .catch(() => {
+        setPdfError(true);
+      });
+  }, []);
+
+  const fileName = `KamaaiProof-WorkPassport-${new Date().toISOString().slice(0, 10)}.pdf`;
+
+  if (pdfError) {
+    return (
+      <span className="btn btn-pdf" style={{ opacity: 0.5, cursor: "not-allowed" }}>
+        PDF unavailable
+      </span>
+    );
+  }
+
+  if (!pdfReady || !PdfLink || !WorkPassportDoc) {
+    return (
+      <span className="btn btn-pdf" aria-busy="true" style={{ opacity: 0.6, cursor: "wait" }}>
+        <span className="spinner spinner-sm" aria-hidden="true" />
+        Loading PDF…
+      </span>
+    );
+  }
+
+  return (
+    <PdfLink
+      document={<WorkPassportDoc result={result} />}
+      fileName={fileName}
+      className="btn btn-pdf"
+      aria-label="Download Work Passport as PDF"
+    >
+      {({ loading }) =>
+        loading ? (
+          <>
+            <span className="spinner spinner-sm" aria-hidden="true" />
+            Preparing PDF…
+          </>
+        ) : (
+          <>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 4.75V15.25M12 15.25L8.25 11.5M12 15.25L15.75 11.5M4.75 18.5H19.25"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Download Work Passport
+          </>
+        )
+      }
+    </PdfLink>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ResultPage
+// ─────────────────────────────────────────────────────────────────────────────
 
 function ResultPage() {
   const navigate = useNavigate();
@@ -130,6 +219,9 @@ function ResultPage() {
       <LoanRealityCalculator />
 
       <div className="action-row action-row-end">
+        {/* PDF download renders lazily after dynamic import resolves */}
+        <PdfDownloadButton result={result} />
+
         <button className="btn btn-primary" type="button" onClick={() => navigate("/upload")}>
           Generate Another Passport
         </button>
