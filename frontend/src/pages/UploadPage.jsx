@@ -268,6 +268,17 @@ function UploadPage() {
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
+  const handleResetUploads = async () => {
+    clearInterval(progressInterval.current);
+    setDocuments([]);
+    setWhatsappText("");
+    setErrorMessage("");
+    setProgressIdx(0);
+    setProgressLabel("");
+    setRecoverySessionId(null);
+    await clearPersistedDocuments();
+  };
+
   const goToResult = (result, sessionId = null) => {
     if (sessionId) {
       window.localStorage.setItem("kamaaiproof-last-session-id", sessionId);
@@ -550,6 +561,14 @@ function UploadPage() {
           disabled={loading}
         >
           Open Demo Result
+        </button>
+        <button
+          className="btn btn-ghost"
+          type="button"
+          onClick={handleResetUploads}
+          disabled={loading}
+        >
+          Reset uploads
         </button>
         {!user && authReady && (
           <button
