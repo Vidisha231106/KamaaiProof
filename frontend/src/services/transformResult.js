@@ -30,8 +30,13 @@ export function normalizeParseResponse(payload, uploadedDocs = [], whatsappText 
   const transactions =
     rawTransactions.length > 0
       ? rawTransactions.map((item, index) => {
-          const category = item.category || item.type || item.documentType || "Unknown";
-          const source = item.source || item.sourceType || category;
+          // Backend returns the inferred type (e.g. 'rent_receipt') in the 'source' field of the Transaction model.
+          const rawSource = item.source || item.sourceType || "Unknown";
+          const category = item.category || item.type || item.document_type || item.documentType || rawSource;
+          
+          // Nicer formatting for display (e.g. rent_receipt -> Rent Receipt)
+          const formatStr = (s) => String(s).replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
           const date =
             item.date ||
             item.transactionDate ||
@@ -53,15 +58,16 @@ export function normalizeParseResponse(payload, uploadedDocs = [], whatsappText 
 
           return {
             id: item.id || `doc-${index + 1}`,
-            source,
-            category,
+            source: formatStr(rawSource),
+            category: formatStr(category),
             date,
             amount,
             verified:
               item.unverified === true
                 ? false
                 : String(item.verificationStatus || "").toLowerCase() !== "unverified" &&
-                  !String(category).toLowerCase().includes("whatsapp")
+                  !String(category).toLowerCase().includes("whatsapp") &&
+                  !String(rawSource).toLowerCase().includes("whatsapp")
           };
         })
       : uploadedDocs.map((doc, index) => ({
