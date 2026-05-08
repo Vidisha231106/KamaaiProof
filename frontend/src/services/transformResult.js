@@ -1,5 +1,15 @@
 function normalizeAmount(value) {
-  const amount = Number(value);
+  if (value === null || value === undefined) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const text = String(value).trim();
+  if (!text) return 0;
+
+  const match = text.match(/-?\d[\d,]*(?:\.\d+)?/);
+  if (!match) return 0;
+
+  const cleaned = match[0].replace(/,/g, "");
+  const amount = Number(cleaned);
   return Number.isFinite(amount) ? amount : 0;
 }
 
@@ -30,12 +40,23 @@ export function normalizeParseResponse(payload, uploadedDocs = [], whatsappText 
             item.timestamp ||
             "Not provided";
 
+          const amount = normalizeAmount(
+            item.amount ??
+              item.amountDue ??
+              item.amount_due ??
+              item.totalAmount ??
+              item.total_amount ??
+              item.rentAmount ??
+              item.rent_amount ??
+              item.value
+          );
+
           return {
             id: item.id || `doc-${index + 1}`,
             source,
             category,
             date,
-            amount: normalizeAmount(item.amount ?? item.amountDue ?? item.value),
+            amount,
             verified:
               item.unverified === true
                 ? false

@@ -16,6 +16,9 @@ Design principle:
 """
 
 import json
+import os
+import tempfile
+from uuid import uuid4, UUID
 from fastapi import APIRouter, HTTPException, Request, Form, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
@@ -23,6 +26,7 @@ from typing import Optional, List, Dict, Any
 
 from pipeline.orchestrator import run_pipeline, run_pipeline_batch
 import storage.store as store
+import storage.supabase_client as supabase_client
 import retrieval.vector_store as vector_store
 from security.rbac import check_access, get_role, filter_response_for_role
 from extraction.openclaw_gateway import OpenClawGateway
@@ -107,20 +111,27 @@ async def parse_multipart(
     files: List[UploadFile] = File(default=[]),
     metadata: str = Form(default="[]"),
     whatsappText: str = Form(default=""),
+    sessionId: str = Form(default=""),
 ):
     """
     Frontend-compatible parse endpoint.
 
-    Matches the existing frontend contract:
-      multipart/form-data with files[], metadata (JSON string), whatsappText.
-
-    Returns shape matching frontend expectation:
-      { consistencyScore, totalIncome, months, transactions, flags }
-
-    This endpoint adapts the frontend's multipart payload into
-    the internal run_pipeline_batch() call.
+    Accepts multipart/form-data with files[], metadata (JSON string), whatsappText.
+    Uploads raw files to Supabase Storage (when configured), runs the AI pipeline,
+    persists results to Supabase Postgres, and returns the scoring summary +
+    a session_id the frontend can use to re-fetch results later.
     """
+    def _is_valid_uuid(value: str) -> bool:
+        try:
+            UUID(value)
+            return True
+        except Exception:
+            return False
+
+    session_id = sessionId if sessionId and _is_valid_uuid(sessionId) else str(uuid4())
     documents = []
+    skipped_files: list[str] = []
+    temp_paths: list[str] = []
 
     # Parse metadata JSON
     try:
@@ -128,13 +139,52 @@ async def parse_multipart(
     except json.JSONDecodeError:
         meta_list = []
 
-    # Handle uploaded files (treat as text for now — OCR simulation)
+    # Supabase Storage client (None if not configured)
+    sb = supabase_client.get_client()
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+
+    # Handle uploaded files
     for i, upload in enumerate(files):
         raw_bytes = await upload.read()
-        try:
-            text_content = raw_bytes.decode("utf-8", errors="replace")
-        except Exception:
-            text_content = ""
+        filename = upload.filename or f"file_{i}"
+        ext = os.path.splitext(filename)[1].lower()
+        content_type = (upload.content_type or "").lower()
+
+        # ── Upload to Supabase Storage ────────────────────────────────────────
+        document_url: str | None = None
+        if sb and raw_bytes:
+            storage_path = f"{session_id}/{filename}"
+            try:
+                sb.storage.from_("document-uploads").upload(
+                    storage_path,
+                    raw_bytes,
+                    {"content-type": upload.content_type or "application/octet-stream"},
+                )
+                document_url = storage_path  # store path; generate signed URL on demand
+            except Exception as exc:
+                print(f"[Storage] Upload failed for {upload.filename}: {exc}")
+
+        # ── Decode text content ───────────────────────────────────────────────
+        is_text = content_type.startswith("text/") or ext in {".txt", ".csv", ".md", ".log", ".json"}
+        text_content = ""
+        is_binary = False
+
+        if is_text:
+            try:
+                text_content = raw_bytes.decode("utf-8")
+            except Exception:
+                try:
+                    text_content = raw_bytes.decode("latin-1")
+                except Exception:
+                    text_content = ""
+        else:
+            if raw_bytes:
+                is_binary = True
+                suffix = ext if ext else ".bin"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    tmp.write(raw_bytes)
+                    temp_paths.append(tmp.name)
+                    text_content = tmp.name
 
         # Map frontend tag label → internal document_type
         doc_type = "bill"  # default
@@ -150,36 +200,76 @@ async def parse_multipart(
                 doc_type = "bill"
 
         if text_content.strip():
-            documents.append({"document_type": doc_type, "content": text_content})
+            documents.append({
+                "document_type": doc_type,
+                "content": text_content,
+                "document_url": document_url,
+                "is_binary": is_binary,
+                "filename": filename,
+                "mime_type": content_type,
+            })
+        else:
+            skipped_files.append(filename)
 
-    # Handle WhatsApp text (treat as UPI by default)
+    # Handle WhatsApp text (treat as UPI by default, no file upload)
     if whatsappText and whatsappText.strip():
-        documents.append({"document_type": "upi", "content": whatsappText})
+        documents.append({"document_type": "upi", "content": whatsappText, "document_url": None})
 
     if not documents:
+        flags = ["No processable content found in submission."]
+        if skipped_files:
+            flags.append(f"Skipped empty/unsupported files: {', '.join(skipped_files)}")
         return JSONResponse(content={
+            "session_id": session_id,
             "consistencyScore": 0,
             "totalIncome": 0,
             "months": [],
             "transactions": [],
-            "flags": ["No processable content found in submission."],
+            "flags": flags,
         }, status_code=200)
 
-    # Use a session-scoped user_id derived from request (demo: fixed for now)
     user_id = "session_user"
 
-    result = run_pipeline_batch(user_id=user_id, documents=documents)
+    try:
+        result = run_pipeline_batch(user_id=user_id, documents=documents, session_id=session_id)
+    finally:
+        for path in temp_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
-    # Transform to frontend-expected shape
     summary = result.get("summary", {})
+    flags = list(summary.get("flags", []))
+    if skipped_files:
+        flags.append(f"Skipped empty/unsupported files: {', '.join(skipped_files)}")
+
     return JSONResponse(content={
-        "consistencyScore": summary.get("consistency_score", 0),
-        "totalIncome": summary.get("total_income", 0),
+        "session_id":          result.get("session_id", session_id),
+        "consistencyScore":    summary.get("consistency_score", 0),
+        "totalIncome":         summary.get("total_income", 0),
         "averageMonthlyIncome": summary.get("average_monthly_income", 0),
-        "months": summary.get("months", []),
-        "transactions": result.get("transactions", []),
-        "flags": summary.get("flags", []),
+        "months":              summary.get("months", []),
+        "transactions":        result.get("transactions", []),
+        "flags":               flags,
     }, status_code=200)
+
+
+@router.get("/session/{session_id}")
+async def get_session(session_id: str):
+    """
+    Re-fetch a previously processed session by its UUID.
+
+    The frontend stores session_id in localStorage after a successful /parse
+    call and uses this endpoint to restore the result page on revisit.
+    """
+    session = store.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session '{session_id}' not found.",
+        )
+    return JSONResponse(content=session)
 
 
 @router.get("/results/{user_id}")

@@ -168,19 +168,23 @@ def _parse_amount(text: str) -> tuple[Optional[float], float]:
 def _infer_transaction_type(text: str, doc_type: str) -> tuple[str, float]:
     """
     Rule-based inference of credit vs debit.
+    For KamaaiProof, ALL uploaded documents are income evidence by default
+    (bills prove cash flow; UPI screenshots prove transactions).
     Returns (type, confidence_contribution).
     """
     if _CREDIT_KEYWORDS.search(text):
         return "credit", 0.85
     if _DEBIT_KEYWORDS.search(text):
-        return "debit", 0.80
-    # Rent is almost always a debit for tenant / credit for landlord
-    # We treat it as credit (income evidence) for informal workers
+        # Even debits show the worker has financial activity — still treat as credit evidence
+        return "credit", 0.70
     if doc_type == "rent" and _RENT_KEYWORDS.search(text):
         return "credit", 0.60
     if doc_type == "bill":
-        return "debit", 0.55
-    return "unknown", 0.30
+        # Bills prove consistent financial activity — treat as income evidence
+        return "credit", 0.55
+    if doc_type == "upi":
+        return "credit", 0.65
+    return "credit", 0.40
 
 
 def _build_description(text: str, doc_type: str) -> str:

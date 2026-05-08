@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import LoanRealityCalculator from "../components/LoanRealityCalculator";
+import { fetchSession } from "../services/api";
+import { normalizeParseResponse } from "../services/transformResult";
 
 function toRupees(amount) {
   const numeric = Number(amount);
@@ -27,27 +29,47 @@ function scoreTone(score) {
 
 function PdfDownloadButton({ result }) {
   const [pdfReady, setPdfReady] = useState(false);
-  const [PdfLink, setPdfLink] = useState(null);
   const [WorkPassportDoc, setWorkPassportDoc] = useState(null);
   const [pdfError, setPdfError] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
+  // Only import WorkPassport component — NOT @react-pdf/renderer directly here.
+  // Using pdf().toBlob() on click avoids the PDFDownloadLink render-prop crash
+  // that occurs when @react-pdf/renderer is excluded from Vite's optimizer.
   useEffect(() => {
-    Promise.all([
-      import("@react-pdf/renderer"),
-      import("../components/WorkPassport"),
-    ])
-      .then(([rendererModule, passportModule]) => {
-        setPdfLink(() => rendererModule.PDFDownloadLink);
-        setWorkPassportDoc(() => passportModule.WorkPassport);
+    import("../components/WorkPassport")
+      .then((mod) => {
+        setWorkPassportDoc(() => mod.WorkPassport);
         setPdfReady(true);
       })
       .catch((err) => {
-        console.error("[PDF] Dynamic import failed:", err);
+        console.error("[PDF] WorkPassport import failed:", err);
         setPdfError(true);
       });
   }, []);
 
-  const fileName = `KamaaiProof-WorkPassport-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const handleDownload = async () => {
+    if (!WorkPassportDoc || generating) return;
+    setGenerating(true);
+    try {
+      // Dynamic import of pdf() — this is the safe pattern for Vite + react-pdf v3
+      const { pdf } = await import("@react-pdf/renderer");
+      const blob = await pdf(<WorkPassportDoc result={result} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `KamaaiProof-WorkPassport-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[PDF] Generation failed:", err);
+      setPdfError(true);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   if (pdfError) {
     return (
@@ -57,9 +79,9 @@ function PdfDownloadButton({ result }) {
     );
   }
 
-  if (!pdfReady || !PdfLink || !WorkPassportDoc) {
+  if (!pdfReady) {
     return (
-      <span className="btn btn-pdf" aria-busy="true" style={{ opacity: 0.6, cursor: "wait" }}>
+      <span className="btn btn-pdf" style={{ opacity: 0.6, cursor: "wait" }}>
         <span className="spinner spinner-sm" aria-hidden="true" />
         Loading PDF…
       </span>
@@ -67,40 +89,33 @@ function PdfDownloadButton({ result }) {
   }
 
   return (
-    <PdfLink
-      document={<WorkPassportDoc result={result} />}
-      fileName={fileName}
+    <button
       className="btn btn-pdf"
+      type="button"
+      onClick={handleDownload}
+      disabled={generating}
       aria-label="Download Work Passport as PDF"
     >
-      {({ loading }) =>
-        loading ? (
-          <>
-            <span className="spinner spinner-sm" aria-hidden="true" />
-            Preparing PDF…
-          </>
-        ) : (
-          <>
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 4.75V15.25M12 15.25L8.25 11.5M12 15.25L15.75 11.5M4.75 18.5H19.25"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Download Work Passport
-          </>
-        )
-      }
-    </PdfLink>
+      {generating ? (
+        <>
+          <span className="spinner spinner-sm" aria-hidden="true" />
+          Preparing PDF…
+        </>
+      ) : (
+        <>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 4.75V15.25M12 15.25L8.25 11.5M12 15.25L15.75 11.5M4.75 18.5H19.25"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Download Work Passport
+        </>
+      )}
+    </button>
   );
 }
 
@@ -112,20 +127,95 @@ function ResultPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const result = useMemo(() => {
-    if (location.state?.result) return location.state.result;
+  // Prefer result from router state (fresh navigation)
+  const [result, setResult] = useState(location.state?.result || null);
+  const [fetchError, setFetchError] = useState(null);
+  const [fetching, setFetching] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-    const cached = window.localStorage.getItem("kamaaiproof-last-result");
-    if (!cached) return null;
+  // session_id from router state or localStorage (lightweight — not the full blob)
+  const sessionId =
+    location.state?.sessionId ||
+    window.localStorage.getItem("kamaaiproof-last-session-id") ||
+    null;
 
-    try {
-      return JSON.parse(cached);
-    } catch {
-      return null;
-    }
-  }, [location.state]);
+  // If result is absent (e.g. page refresh), attempt to re-fetch by session_id
+  useEffect(() => {
+    if (result || fetchError) return;
+    if (!sessionId) return;
 
+    setFetching(true);
+    setFetchError(null);
+    fetchSession(sessionId)
+      .then((payload) => {
+        const restored = normalizeParseResponse(payload, [], "");
+        setResult(restored);
+      })
+      .catch((err) => {
+        console.error("[ResultPage] Session re-fetch failed:", err);
+        setFetchError({
+          status: err?.response?.status || null,
+          message:
+            err?.response?.data?.detail ||
+            err?.response?.data?.message ||
+            "We could not load your session right now.",
+        });
+      })
+      .finally(() => setFetching(false));
+  }, [sessionId, retryCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Loading state (re-fetching from Supabase) ─────────────────────────────────────────
+  if (fetching) {
+    return (
+      <section className="result-page">
+        <div className="empty-state" role="status" aria-live="polite">
+          <h1>Restoring your session…</h1>
+          <p>Fetching your previous results from the database.</p>
+        </div>
+      </section>
+    );
+  }
+
+  // ── No result available ───────────────────────────────────────────────────────────
   if (!result) {
+    if (sessionId && fetchError?.status === 404) {
+      return (
+        <section className="result-page">
+          <div className="empty-state" role="status" aria-live="polite">
+            <h1>Still processing your documents</h1>
+            <p>Your upload is likely still running. This can happen during rate limits.</p>
+            <div className="action-row">
+              <button className="btn btn-primary" type="button" onClick={() => setRetryCount((c) => c + 1)}>
+                Check again
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => navigate("/upload")}>
+                Back to Uploads
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+    if (sessionId && fetchError) {
+      return (
+        <section className="result-page">
+          <div className="empty-state" role="status" aria-live="polite">
+            <h1>We could not load your result</h1>
+            <p>{fetchError.message}</p>
+            <div className="action-row">
+              <button className="btn btn-primary" type="button" onClick={() => setRetryCount((c) => c + 1)}>
+                Try again
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => navigate("/upload")}>
+                Back to Uploads
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section className="result-page">
         <div className="empty-state" role="status" aria-live="polite">

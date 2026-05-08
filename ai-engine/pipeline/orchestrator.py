@@ -243,7 +243,8 @@ def run_pipeline(
 
 def run_pipeline_batch(
     user_id: str,
-    documents: list[dict],  # list of {"document_type": ..., "content": ...}
+    documents: list[dict],  # list of {"document_type": ..., "content": ..., "document_url": ...}
+    session_id: str | None = None,
 ) -> dict:
     """
     Process multiple documents for one user in sequence.
@@ -253,27 +254,26 @@ def run_pipeline_batch(
     """
     all_transactions: list[Transaction] = []
     all_errors: list[ValidationError] = []
+    all_document_urls: list[str | None] = []
 
     for doc in documents:
-        san_result = sanitize(doc["content"])
-        
-        # Skip slow OpenClaw/Groq path for plain text content — use MockExtractor directly.
-        # OpenClaw (Vision LLM) is only meaningful for binary image files.
-        content = doc["content"]
-        is_plain_text = not any(content.startswith(sig) for sig in (
-            '\xff\xd8',  # JPEG magic bytes (latin-1)
-            '\x89PNG',   # PNG magic bytes (latin-1)
-            '%PDF',      # PDF header
-        ))
-
-        mock = MockExtractor(document_type=doc["document_type"])
-        if is_plain_text:
-            extractor = mock
+        is_binary = bool(doc.get("is_binary"))
+        if is_binary:
+            sanitized_text = doc["content"]
         else:
+            san_result = sanitize(doc["content"])
+            sanitized_text = san_result.sanitized_text
+
+        # Skip slow OpenClaw/Groq path for plain text content — use MockExtractor directly.
+        # OpenClaw (Vision LLM) is only meaningful for binary image/pdf files.
+        mock = MockExtractor(document_type=doc["document_type"])
+        if is_binary:
             claw = OpenClawExtractor()
             extractor = FallbackExtractor(claw, mock)
-        
-        extraction_result = extractor.run(san_result.sanitized_text)
+        else:
+            extractor = mock
+
+        extraction_result = extractor.run(sanitized_text)
         extracted_txns = extraction_result.get("transactions", [])
         
         if not extracted_txns:
@@ -294,6 +294,7 @@ def run_pipeline_batch(
             errors = validate(txn)
             all_transactions.append(txn)
             all_errors.extend(errors)
+            all_document_urls.append(doc.get("document_url"))
 
             # Index each document individually
             summary_text = (
@@ -303,9 +304,17 @@ def run_pipeline_batch(
             vector_store.index_summary(user_id, summary_text, {"doc_type": doc["document_type"]})
 
     summary = _build_summary(all_transactions, user_id)
-    store.save(user_id, all_transactions, summary, all_errors)
+    saved_session_id = store.save(
+        user_id,
+        all_transactions,
+        summary,
+        all_errors,
+        session_id=session_id,
+        document_urls=all_document_urls,
+    )
 
     return {
+        "session_id": saved_session_id,
         "transactions": [t.model_dump() for t in all_transactions],
         "summary": summary,
         "validation_errors": [e.model_dump() for e in all_errors],
