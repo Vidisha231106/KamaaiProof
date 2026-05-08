@@ -39,7 +39,7 @@ app.add_middleware(
     "http://localhost:5173",
     "http://localhost:3000",
     "http://localhost:4173",
-    "https://your-app.vercel.app",   # ← replace with real Vercel URL
+    "https://kamaai-proof.vercel.app/",   # ← replace with real Vercel URL
 ],
 
     allow_credentials=True,
