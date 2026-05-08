@@ -113,7 +113,6 @@ const S = StyleSheet.create({
   },
   headerLeft: {
     flexDirection: "column",
-    gap: 4,
   },
   headerKicker: {
     fontSize: 7.5,
@@ -137,13 +136,13 @@ const S = StyleSheet.create({
   headerRight: {
     flexDirection: "column",
     alignItems: "flex-end",
-    gap: 3,
   },
   headerDateLabel: {
     fontSize: 7,
     color: "#7bb6ff",
     letterSpacing: 0.8,
     textTransform: "uppercase",
+    marginBottom: 2,
   },
   headerDate: {
     fontSize: 9,
@@ -169,7 +168,9 @@ const S = StyleSheet.create({
     paddingHorizontal: 32,
     paddingTop: 20,
     flexDirection: "column",
-    gap: 14,
+  },
+  sectionSpacing: {
+    marginBottom: 12,
   },
 
   // ── Section headings ────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ const S = StyleSheet.create({
   // ── Summary cards ────────────────────────────────────────────────────────────
   summaryRow: {
     flexDirection: "row",
-    gap: 10,
+    justifyContent: "space-between",
   },
   summaryCard: {
     flex: 1,
@@ -195,7 +196,10 @@ const S = StyleSheet.create({
     borderColor: "#c9d6ea",
     padding: 12,
     flexDirection: "column",
-    gap: 3,
+    marginRight: 10,
+  },
+  summaryCardLast: {
+    marginRight: 0,
   },
   summaryCardLabel: {
     fontSize: 7.5,
@@ -324,7 +328,6 @@ const S = StyleSheet.create({
     padding: 10,
     marginBottom: 5,
     flexDirection: "row",
-    gap: 7,
     alignItems: "flex-start",
   },
   flagDot: {
@@ -333,6 +336,7 @@ const S = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: "#966103",
     marginTop: 2,
+    marginRight: 7,
   },
   flagText: {
     flex: 1,
@@ -360,13 +364,13 @@ const S = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 16,
   },
   footerText: {
     flex: 1,
     fontSize: 7,
     color: "#b5c7e1",
     lineHeight: 1.6,
+    marginRight: 16,
   },
   footerBrand: {
     fontSize: 7.5,
@@ -432,7 +436,7 @@ function SummarySection({ result }) {
         </View>
 
         {/* Months Covered */}
-        <View style={S.summaryCard}>
+        <View style={[S.summaryCard, S.summaryCardLast]}>
           <View style={[S.summaryAccentBar, { backgroundColor: "#167684" }]} />
           <Text style={S.summaryCardLabel}>Months of Evidence</Text>
           <Text style={S.summaryCardValue}>
@@ -551,13 +555,19 @@ export function WorkPassport({ result }) {
         <Header generatedOn={generatedOn} />
 
         <View style={S.body}>
-          <SummarySection result={result} />
+          <View style={S.sectionSpacing}>
+            <SummarySection result={result} />
+          </View>
           <View style={S.divider} />
-          <TransactionsSection documents={result.documents} />
+          <View style={S.sectionSpacing}>
+            <TransactionsSection documents={result.documents} />
+          </View>
           {result.flags && result.flags.length > 0 && (
             <>
               <View style={S.divider} />
-              <FlagsSection flags={result.flags} />
+              <View style={S.sectionSpacing}>
+                <FlagsSection flags={result.flags} />
+              </View>
             </>
           )}
         </View>

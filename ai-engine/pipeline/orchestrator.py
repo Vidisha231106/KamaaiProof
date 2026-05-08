@@ -46,16 +46,21 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
 
     # Strict 6-month rolling window scoring
     dated_credit_txns = []
+    future_dated = []
+    today = date.today()
     for t in credit_txns:
         if not t.date:
             continue
         try:
             parsed = datetime.fromisoformat(t.date).date()
+            if parsed > today:
+                future_dated.append(t)
+                continue
             dated_credit_txns.append((t, parsed))
         except ValueError:
             continue
 
-    anchor_date = max((d for _, d in dated_credit_txns), default=date.today())
+    anchor_date = max((d for _, d in dated_credit_txns), default=today)
 
     def month_start(d: date) -> date:
         return d.replace(day=1)
@@ -116,6 +121,10 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
         flags.append(
             f"{len(unknown_type)} transaction(s) could not be classified as credit or debit."
         )
+    if future_dated:
+        flags.append(
+            f"{len(future_dated)} transaction(s) have future dates and were excluded from scoring."
+        )
     if not covered_months:
         flags.append("No dated credit transactions found — income period cannot be determined.")
     if missing_months:
@@ -123,8 +132,9 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
             f"Income evidence missing in {len(missing_months)} month(s) within the 6-month window."
         )
 
-    # Average monthly income across covered months
-    avg_monthly_income = round(total_income / max(len(covered_months), 1), 2)
+    # Average monthly income across covered months in the scoring window
+    window_income = sum(monthly_income[m] for m in covered_months)
+    avg_monthly_income = round(window_income / max(len(covered_months), 1), 2) if covered_months else 0.0
 
     return {
         "user_id": user_id,

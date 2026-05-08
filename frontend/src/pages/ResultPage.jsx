@@ -39,7 +39,11 @@ function PdfDownloadButton({ result }) {
   useEffect(() => {
     import("../components/WorkPassport")
       .then((mod) => {
-        setWorkPassportDoc(() => mod.WorkPassport);
+        const WorkPassportComponent = mod.WorkPassport || mod.default;
+        if (!WorkPassportComponent) {
+          throw new Error("WorkPassport export not found");
+        }
+        setWorkPassportDoc(() => WorkPassportComponent);
         setPdfReady(true);
       })
       .catch((err) => {
