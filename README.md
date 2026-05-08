@@ -1,182 +1,147 @@
 # KamaaiProof
+### Work Passport for India's Invisible Workforce
 
-Work Passport for India's Invisible Workforce.
+> **Live Demo:** [https://kamaai-proof.vercel.app](https://kamaai-proof.vercel.app)
 
-KamaaiProof helps informal workers convert everyday evidence of work into a lender-readable proof packet. The system focuses on workers who earn consistently but do not have formal salary slips, employer letters, or traditional credit history.
+---
 
-## Problem Context
+## Problem
 
-India has a very large informal workforce (domestic workers, auto drivers, street vendors, daily wage laborers, and related groups). Income exists, but proof is fragmented across:
+India's informal workforce — domestic workers, auto drivers, street vendors, and daily wage laborers — earns consistently but lacks formal proof of income. Salary slips, employer letters, and credit histories simply don't exist for this segment.
 
+Income evidence is scattered across:
 - UPI screenshots
 - Utility bills
-- Receipts
-- Employer messages (often WhatsApp)
+- Rent receipts
+- Employer WhatsApp messages
 
-The core gap is not income creation, but evidence assembly and presentation quality.
+The gap is not income creation — it's **evidence assembly and presentation quality**. Lenders and MFIs cannot process what they cannot read.
 
-## Product Summary
+---
 
-KamaaiProof collects user-submitted records, parses them into structured fields, applies consistency checks, and returns a Work Passport summary that can be used as supporting evidence during loan review.
+## Solution
 
-Primary outputs:
+KamaaiProof collects user-submitted records, parses them with AI, applies consistency checks, and returns a **Work Passport** — a lender-readable proof packet that turns informal documents into structured financial evidence.
 
+**Primary outputs:**
 - Estimated monthly income
-- Consistency score out of 100
-- Parsed document list with dates and amounts
-- Plain-language warning or fraud flags
-- Downloadable Work Passport PDF (client-side)
+- Consistency score (out of 100)
+- Parsed document list with dates, amounts, and verification status
+- Plain-language warnings and fraud flags
+- Downloadable Work Passport PDF (generated client-side)
 
-## Personas (Operational Focus)
+---
 
-1. Informal worker (primary beneficiary)
-2. SHG leader (assists document collection and onboarding)
-3. MFI field officer (uses summary to reduce manual verification time)
+## Architecture
 
-## Repository Status
+```
+User (Google OAuth)
+        ↓
+  React Frontend (Vercel)
+        ↓  multipart/form-data + Bearer token
+  FastAPI AI Engine (Render)
+        ↓
+  Groq Vision (OCR + extraction)
+        ↓
+  Supabase (auth + persistence)
+        ↓
+  Frontend renders score, transactions, warnings
+        ↓
+  @react-pdf/renderer → Work Passport PDF
+```
 
-This repository currently contains:
+---
 
-- A complete frontend experience (upload + preview + per-doc progress + reset + result summary)
-- Google OAuth sign-in with Supabase Auth and protected backend calls
-- AI engine pipeline with extraction, validation, scoring, and Supabase persistence
-- Client-side PDF generation via @react-pdf/renderer
-- OpenClaw gateway integration with vision extraction fallback
+## Tech Stack
 
-Known limitations:
+| Layer | Technology |
+|---|---|
+| Frontend | React + Vite |
+| Backend | FastAPI + Uvicorn (Python) |
+| AI / OCR | Groq Vision (llama-4 vision) |
+| Auth | Supabase (Google OAuth) |
+| Database | Supabase (Postgres + RLS) |
+| PDF | @react-pdf/renderer (client-side) |
+| Frontend Deploy | Vercel |
+| Backend Deploy | Render |
 
-- Vision/OCR depends on OpenClaw/Groq configuration; text files remain most reliable without it
-- Large batches can hit rate limits; retries may be required during peak usage
+---
 
-## High-Level Architecture
-
-1. User signs in with Google (Supabase Auth).
-2. Frontend gathers files and user tags.
-3. Frontend sends multipart payload + bearer token to backend parse endpoint.
-4. Backend verifies token, parses documents, and stores results in Supabase.
-5. Frontend renders score, transactions, and warnings.
-6. PDF layer generates browser-side Work Passport document.
-
-## Directory Map
+## Repository Structure
 
 ```
 KamaaiProof/
-	backend/
-		src/
-			api/
-			chains/
-			services/
-	ai-engine/
-		extraction/
-		pipeline/
-		security/
-		storage/
-		sanitization/
-		retrieval/
-		tests/
-	docs/
-		01-Frontend-Spec.md
-		02-LangChain-Parsing-Spec.md
-		03-Scoring-Firebase-PDF-Spec.md
-		04-DevOps-QA-Spec.md
-	frontend/
-		src/
-			components/
-			pages/
-			services/
-	skills/
-		KamaaiProof/
-	kamaaiproof-skill/
+├── ai-engine/          # FastAPI backend
+│   ├── extraction/     # Groq vision extraction + OpenClaw gateway
+│   ├── pipeline/       # Orchestration + 6-month scoring
+│   ├── validation/     # Field validation
+│   ├── sanitization/   # PII scrubbing
+│   ├── storage/        # Supabase client
+│   ├── security/       # Auth + RBAC
+│   └── api/            # Route definitions
+├── frontend/           # React + Vite app
+│   └── src/
+│       ├── components/
+│       ├── pages/
+│       └── services/
+└── docs/               # Spec documents
 ```
 
-## Contract Between Frontend and Backend
+---
 
-Frontend currently posts to:
+## Local Setup
 
-- Endpoint: `POST /parse`
-- Content-Type: `multipart/form-data`
-- Authorization: `Bearer <supabase_access_token>`
+### Prerequisites
+- Node.js 18+
+- Python 3.11+
+- A Supabase project
+- A Groq API key
 
-Expected form fields:
+---
 
-- `files`: repeated file entries
-- `metadata`: JSON string array with per-file tag and metadata
-- `whatsappText`: optional plain text string
-- `sessionId`: optional UUID generated by client for retry-safe restores
+### 1. Frontend
 
-Frontend can normalize multiple backend response shapes, but target response shape should be:
-
-```json
-{
-	"session_id": "uuid",
-	"consistencyScore": 78,
-	"totalIncome": 12000,
-	"months": ["2025-10", "2025-11", "2025-12", "2026-01", "2026-02"],
-	"transactions": [
-		{
-			"id": "tx-1",
-			"source": "gpay_screenshot_1.jpg",
-			"category": "UPI Screenshot",
-			"date": "2026-02-06",
-			"amount": 2500,
-			"verified": true
-		}
-	],
-	"flags": ["Address mismatch detected across utility bills"]
-}
+```bash
+cd frontend
+npm install
 ```
 
-## Privacy and Data Safety Guardrails
+Create `frontend/.env`:
+```
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_BACKEND_API_URL=http://localhost:8000
+```
 
-Mandatory guidance for all future contributors and AI agents:
+```bash
+npm run dev
+```
 
-- Do not persist raw personally identifiable identifiers in scored records.
-- Avoid storing names, phone numbers, or UPI IDs in Firestore session summaries.
-- Keep WhatsApp-derived records explicitly labeled unverified.
-- Preserve user-controlled flow: this output is supporting evidence, not loan approval logic.
+---
 
-## How AI Agents Should Use This Repository
+### 2. AI Engine (Backend)
 
-When asking an AI coding agent to continue implementation, include:
+```bash
+cd ai-engine
+pip install -r requirements.txt
+```
 
-1. The folder target (frontend, backend, or docs)
-2. The specific role context from docs (Person 1/2/3/4)
-3. The expected API contract or UI acceptance criteria
-4. Any constraints (no schema changes, preserve response shape, etc.)
+Create `ai-engine/.env`:
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+GROQ_API_KEY=your-groq-key
+```
 
-Recommended order for backend completion:
+```bash
+uvicorn main:app --port 8000 --reload
+```
 
-1. Build parse endpoint and upload handling
-2. Implement chain extraction modules
-3. Implement scoring service and flags
-4. Add Firebase persistence
-5. Integrate PDF payload support
+---
 
-## Quick Start
+### 3. Supabase Schema
 
-### Frontend
-
-1. Go to `frontend`
-2. Install dependencies: `npm install`
-3. Configure `.env` with:
-	- `VITE_SUPABASE_URL`
-	- `VITE_SUPABASE_ANON_KEY`
-	- `VITE_BACKEND_API_URL`
-4. Run: `npm run dev`
-
-### AI Engine (Backend)
-
-1. Go to `ai-engine`
-2. Create `.env` with:
-	- `SUPABASE_URL`
-	- `SUPABASE_SERVICE_ROLE_KEY`
-	- (Optional) `OPENCLAW_API_URL`, `OPENCLAW_API_KEY`, `GROQ_API_KEY`
-3. Install dependencies: `python -m pip install -r requirements.txt`
-4. Run: `python -m uvicorn main:app --port 8000 --reload`
-
-### Supabase Schema Updates (Required)
-
-Run this once in Supabase SQL Editor:
+Run once in Supabase SQL Editor:
 
 ```sql
 alter table sessions add column if not exists user_id uuid references auth.users(id);
@@ -185,133 +150,100 @@ alter table transactions add column if not exists user_id uuid references auth.u
 alter table sessions enable row level security;
 alter table transactions enable row level security;
 
-create policy "sessions_select_own"
-on sessions for select
-using (auth.uid() = user_id);
-
-create policy "sessions_insert_own"
-on sessions for insert
-with check (auth.uid() = user_id);
-
-create policy "transactions_select_own"
-on transactions for select
-using (auth.uid() = user_id);
-
-create policy "transactions_insert_own"
-on transactions for insert
-with check (auth.uid() = user_id);
+create policy "sessions_select_own" on sessions for select using (auth.uid() = user_id);
+create policy "sessions_insert_own" on sessions for insert with check (auth.uid() = user_id);
+create policy "transactions_select_own" on transactions for select using (auth.uid() = user_id);
+create policy "transactions_insert_own" on transactions for insert with check (auth.uid() = user_id);
 ```
 
-### Google OAuth Setup (Supabase + Google)
+---
 
-1. In Google Cloud Console, add this redirect URI:
-	- `https://YOUR_PROJECT.supabase.co/auth/v1/callback`
+### 4. Google OAuth
+
+1. In Google Cloud Console, add redirect URI:
+   `https://YOUR_PROJECT.supabase.co/auth/v1/callback`
 2. In Supabase → Authentication → URL Configuration:
-	- Site URL: `http://localhost:5173`
-	- Redirect URLs: `http://localhost:5173`, `http://localhost:5173/upload`
-3. In Supabase → Providers → Google, paste Client ID + Client Secret
-
-## Documentation Index
-
-- `docs/01-Frontend-Spec.md`: frontend execution guide
-- `docs/02-LangChain-Parsing-Spec.md`: parsing and chain workflow guide
-- `docs/03-Scoring-Firebase-PDF-Spec.md`: scoring, Firebase, and PDF guide
-- `docs/04-DevOps-QA-Spec.md`: infra, QA, and release guide
+   - Site URL: `http://localhost:5173`
+   - Redirect URLs: `http://localhost:5173`, `http://localhost:5173/upload`
+3. In Supabase → Providers → Google: paste Client ID + Secret
 
 ---
 
-## OpenClaw Gateway: Features, Integration, and Full Test Guide
+## Usage
 
-### Features
-
-- **Dynamic Skill Discovery:** Auto-detects all skills in `skills/` (e.g., `KamaaiProof`).
-- **Skill Manifest Loading:** Reads skill metadata, entry points, and capabilities.
-- **Dynamic Invocation:** Runs skill entry points through the OpenClaw gateway.
-- **HTTP API Endpoints:** Exposes `/openclaw/skills`, `/openclaw/skills/{skill_name}`, and `/openclaw/invoke`.
-- **Pipeline Integration:** `OpenClawExtractor` is wired into `run_pipeline()` and `run_pipeline_batch()`.
-- **6-Month Scoring Output:** Summary includes `consistency_score`, `window_months`, and `monthly_income`.
-- **Demo Override Mode:** Optional deterministic extraction map for demo docs in `ai-engine/extraction/demo_overrides.json`.
-
-### Current Integration Points
-
-- OpenClaw routes: `ai-engine/api/routes.py`
-- Gateway implementation: `ai-engine/extraction/openclaw_gateway.py`
-- Extractor integration + fallback: `ai-engine/extraction/base_extractor.py`
-- 6-month scoring logic: `ai-engine/pipeline/orchestrator.py`
-- Demo scoring runner: `ai-engine/tests/test_demo_scoring.py`
-
-### One-Time Setup
-
-Use Python dependencies from both `ai-engine` and `backend`.
-
-```bash
-python -m pip install -r ai-engine/requirements.txt
-python -m pip install -r backend/requirements.txt
-```
-
-Important compatibility pin:
-- `httpx` must be `<0.28.0` for current Groq/OpenClaw path.
-
-Verify:
-```bash
-python -c "import httpx; print(httpx.__version__)"
-```
-
-### End-to-End Test (OpenClaw + API + Pipeline)
-
-1. **Start API server**
-   ```bash
-   cd ai-engine
-   python -m uvicorn main:app --port 8000
-   ```
-
-2. **Run OpenClaw API integration tests**
-   ```bash
-   cd ..
-   python ai-engine/test_gateway_api.py
-   python ai-engine/test_openclaw_gateway.py
-   python ai-engine/tests/test_openclaw.py
-   ```
-
-3. **What to expect**
-   - Skill listing and skill info should pass.
-   - Pipeline tests should complete and print summary output.
-   - If Groq rate-limits or runtime deps fail, fallback path should still keep pipeline functional.
-
-### Demo Scoring Test (Recommended for handoff)
-
-For the mixed demo documents in `backend/src/Python_engine/Documents`, run:
-
-```bash
-python ai-engine/tests/test_demo_scoring.py
-```
-
-This prints:
-- `total_income`
-- `total_spend`
-- `consistency_score`
-- `months`
-- `window_months` (strict 6-month window)
-- `monthly_income`
-- `flags`
-
-Use this summary JSON as the contract for PDF work.
-
-### OpenClaw Invocation Example
-
-```bash
-python -c "import httpx, json; payload={'skill':'KamaaiProof','input':{'image_path':'backend/src/Python_engine/Documents/payment_may26.jpeg','document_type':'upi'}}; r=httpx.post('http://127.0.0.1:8000/openclaw/invoke', json=payload, timeout=30); print(r.status_code); print(json.dumps(r.json(), indent=2))"
-```
-
-### Troubleshooting
-
-- **`Client.__init__() got an unexpected keyword argument 'proxies'`**
-  - Ensure `httpx` is pinned to `<0.28.0`, then reinstall requirements.
-- **Skill not found**
-  - Verify `skills/KamaaiProof/manifest.json` exists and skill name matches.
-- **Invocation returns rate-limit / transient API errors**
-  - Re-run the request; demo scoring can continue via fallback/override path.
-- **Need deterministic demo outputs**
-  - Edit `ai-engine/extraction/demo_overrides.json` for filename-level date/amount control.
+1. Sign in with Google
+2. Upload informal income documents (UPI screenshots, receipts, utility bills)
+3. Wait for AI extraction and scoring
+4. View your Work Passport — income summary, consistency score, parsed transactions
+5. Download the PDF to share with lenders or MFI field officers
 
 ---
+
+## API Contract
+
+**Endpoint:** `POST /parse`  
+**Auth:** `Bearer <supabase_access_token>`  
+**Content-Type:** `multipart/form-data`
+
+| Field | Type | Description |
+|---|---|---|
+| `files` | File[] | Document files |
+| `metadata` | JSON string | Per-file tags and metadata |
+| `whatsappText` | string (optional) | Plain text from WhatsApp |
+| `sessionId` | UUID (optional) | Client-generated for retry safety |
+
+**Response:**
+```json
+{
+  "session_id": "uuid",
+  "consistencyScore": 78,
+  "totalIncome": 12000,
+  "months": ["2025-10", "2025-11", "2025-12"],
+  "transactions": [
+    {
+      "id": "tx-1",
+      "source": "gpay_screenshot.jpg",
+      "category": "UPI Screenshot",
+      "date": "2026-02-06",
+      "amount": 2500,
+      "verified": true
+    }
+  ],
+  "flags": ["Address mismatch detected across utility bills"]
+}
+```
+
+---
+
+## Target Personas
+
+1. **Informal worker** — primary beneficiary, submits documents to build their Work Passport
+2. **SHG leader** — assists with document collection and onboarding
+3. **MFI field officer** — uses the summary to reduce manual verification time
+
+---
+
+## Known Limitations
+
+- Vision/OCR quality depends on Groq configuration; plain text files are most reliable
+- Large document batches may hit Groq rate limits; retry if needed
+- Work Passport is supporting evidence only — not a loan approval decision
+
+---
+
+## Privacy
+
+- Raw PII (names, phone numbers, UPI IDs) is not persisted in scored records
+- WhatsApp-derived records are explicitly labeled unverified
+- Users control their own data flow; output is evidence, not a credit score
+
+---
+
+## Documentation
+
+## 🎥 Demo Video
+
+👉 [Watch the full walkthrough here](https://drive.google.com/file/d/15u-VTZ2A4oxDs_xcZyafK1uI7GySnwwg/view?usp=sharing)
+
+> See KamaaiProof in action — document upload, AI extraction, scoring, and Work Passport PDF generation.
+
