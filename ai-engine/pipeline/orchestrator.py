@@ -123,9 +123,13 @@ def _build_summary(transactions: list[Transaction], user_id: str) -> dict:
             f"Income evidence missing in {len(missing_months)} month(s) within the 6-month window."
         )
 
+    # Average monthly income across covered months
+    avg_monthly_income = round(total_income / max(len(covered_months), 1), 2)
+
     return {
         "user_id": user_id,
         "total_income": round(total_income, 2),
+        "average_monthly_income": avg_monthly_income,
         "total_spend": round(total_spend, 2),
         "consistency_score": consistency_score,
         "months": covered_months,
@@ -253,10 +257,21 @@ def run_pipeline_batch(
     for doc in documents:
         san_result = sanitize(doc["content"])
         
-        # Initialize Extractor for this document type
+        # Skip slow OpenClaw/Groq path for plain text content — use MockExtractor directly.
+        # OpenClaw (Vision LLM) is only meaningful for binary image files.
+        content = doc["content"]
+        is_plain_text = not any(content.startswith(sig) for sig in (
+            '\xff\xd8',  # JPEG magic bytes (latin-1)
+            '\x89PNG',   # PNG magic bytes (latin-1)
+            '%PDF',      # PDF header
+        ))
+
         mock = MockExtractor(document_type=doc["document_type"])
-        claw = OpenClawExtractor()
-        extractor = FallbackExtractor(claw, mock)
+        if is_plain_text:
+            extractor = mock
+        else:
+            claw = OpenClawExtractor()
+            extractor = FallbackExtractor(claw, mock)
         
         extraction_result = extractor.run(san_result.sanitized_text)
         extracted_txns = extraction_result.get("transactions", [])

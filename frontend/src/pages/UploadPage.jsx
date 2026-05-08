@@ -20,7 +20,15 @@ function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const onDrop = (acceptedFiles) => {
+  const onDrop = (acceptedFiles, rejectedFiles) => {
+    if (rejectedFiles && rejectedFiles.length > 0) {
+      setErrorMessage(
+        `${rejectedFiles.length} file(s) were not accepted. Supported formats: JPG, PNG, WEBP, PDF, TXT.`
+      );
+    }
+
+    if (acceptedFiles.length === 0) return;
+
     const mapped = acceptedFiles.map((file, index) => ({
       id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
       file,
@@ -35,13 +43,15 @@ function UploadPage() {
     onDrop,
     accept: {
       "image/*": [".jpg", ".jpeg", ".png", ".webp"],
-      "application/pdf": [".pdf"]
+      "application/pdf": [".pdf"],
+      "text/plain": [".txt"],
     }
   });
 
   const taggedCount = useMemo(() => documents.filter((item) => item.tag).length, [documents]);
 
   const canGenerate = taggedCount >= 3 && !loading;
+
 
   const updateTag = (id, tag) => {
     setDocuments((current) =>
@@ -125,11 +135,12 @@ function UploadPage() {
           className={`dropzone ${isDragActive ? "active" : ""}`}
         >
           <input {...getInputProps()} />
-          <p className="dropzone-title">Drag and drop images or PDFs here</p>
-          <p className="dropzone-subtitle">Supported formats: JPG, PNG, WEBP, PDF</p>
+          <p className="dropzone-title">Drag and drop files here, or click to browse</p>
+          <p className="dropzone-subtitle">Supported: JPG, PNG, WEBP, PDF, TXT</p>
           <div className="dropzone-hint-row" aria-hidden="true">
             <span className="dropzone-hint">Secure local upload</span>
             <span className="dropzone-hint">No edits to original files</span>
+            <span className="dropzone-hint">Text files work best</span>
           </div>
         </div>
       </section>

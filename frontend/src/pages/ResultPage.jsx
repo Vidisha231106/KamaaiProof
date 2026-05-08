@@ -41,7 +41,8 @@ function PdfDownloadButton({ result }) {
         setWorkPassportDoc(() => passportModule.WorkPassport);
         setPdfReady(true);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[PDF] Dynamic import failed:", err);
         setPdfError(true);
       });
   }, []);

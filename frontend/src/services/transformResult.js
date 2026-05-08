@@ -54,7 +54,9 @@ export function normalizeParseResponse(payload, uploadedDocs = [], whatsappText 
 
   const flags = toArray(root.flags).length > 0 ? toArray(root.flags) : toArray(root.warnings);
   const score = Number(root.consistencyScore ?? root.score ?? 0);
-  const estimatedMonthlyIncome = normalizeAmount(root.totalIncome ?? root.estimatedMonthlyIncome ?? 0);
+  const estimatedMonthlyIncome = normalizeAmount(
+    root.averageMonthlyIncome ?? root.estimatedMonthlyIncome ?? root.totalIncome ?? 0
+  );
 
   const inferredMonthsCovered = Array.isArray(root.months)
     ? root.months.length

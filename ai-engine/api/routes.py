@@ -136,14 +136,18 @@ async def parse_multipart(
         except Exception:
             text_content = ""
 
-        # Get document type from metadata if provided
+        # Map frontend tag label → internal document_type
         doc_type = "bill"  # default
         if i < len(meta_list) and isinstance(meta_list[i], dict):
             tag = meta_list[i].get("tag", "").lower()
-            if "upi" in tag or "gpay" in tag or "phonepe" in tag:
+            if any(k in tag for k in ("upi", "gpay", "phonepe", "bhim", "paytm")):
                 doc_type = "upi"
             elif "rent" in tag:
                 doc_type = "rent"
+            elif any(k in tag for k in ("utility", "bill", "electricity", "water", "gas")):
+                doc_type = "bill"
+            elif any(k in tag for k in ("receipt", "invoice", "payment")):
+                doc_type = "bill"
 
         if text_content.strip():
             documents.append({"document_type": doc_type, "content": text_content})
@@ -171,6 +175,7 @@ async def parse_multipart(
     return JSONResponse(content={
         "consistencyScore": summary.get("consistency_score", 0),
         "totalIncome": summary.get("total_income", 0),
+        "averageMonthlyIncome": summary.get("average_monthly_income", 0),
         "months": summary.get("months", []),
         "transactions": result.get("transactions", []),
         "flags": summary.get("flags", []),
