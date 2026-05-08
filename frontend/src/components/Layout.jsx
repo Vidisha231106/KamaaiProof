@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import Dock from "./Dock";
+import { useAuth } from "../contexts/AuthContext";
 
 function HomeIcon({ size = 18 }) {
   return (
@@ -73,6 +74,7 @@ function ThemeModeIcon({ theme, size = 18 }) {
 function Layout({ children, theme, toggleTheme }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, authReady, signInWithGoogle, signOut } = useAuth();
 
   const dockItems = useMemo(
     () => [
@@ -133,6 +135,22 @@ function Layout({ children, theme, toggleTheme }) {
               spring={{ mass: 0.18, stiffness: 135, damping: 16 }}
               expandOnHover={false}
             />
+          </div>
+          <div className="auth-status">
+            {!authReady ? (
+              <span className="auth-pill">Checking auth…</span>
+            ) : user ? (
+              <>
+                <span className="auth-pill">{user.email || "Signed in"}</span>
+                <button className="btn btn-secondary btn-small" type="button" onClick={signOut}>
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <button className="btn btn-primary btn-small" type="button" onClick={signInWithGoogle}>
+                Sign in with Google
+              </button>
+            )}
           </div>
         </div>
       </header>

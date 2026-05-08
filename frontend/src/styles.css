@@ -887,6 +887,12 @@ textarea:focus-visible {
   font-size: 0.98rem;
 }
 
+.btn-small {
+  min-height: 36px;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.82rem;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary), var(--secondary) 25%));
   color: var(--primary-contrast);
@@ -918,6 +924,23 @@ textarea:focus-visible {
 .status-text {
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.auth-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface), var(--surface-alt) 55%);
 }
 
 .error-banner {

@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.46.0",
     "@react-pdf/renderer": "^3.4.4",
     "axios": "^1.9.0",
     "motion": "^12.38.0",

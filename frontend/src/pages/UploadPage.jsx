@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { parseDocuments } from "../services/api";
 import { createDemoResult, normalizeParseResponse } from "../services/transformResult";
+import { useAuth } from "../contexts/AuthContext";
 
 const TAG_OPTIONS = ["UPI Screenshot", "Utility Bill", "Receipt"];
 const UPLOAD_DB_NAME = "kamaaiproof-upload-cache";
@@ -188,6 +189,7 @@ function FilePreview({ file }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function UploadPage() {
   const navigate  = useNavigate();
+  const { user, authReady, signInWithGoogle } = useAuth();
   const [documents, setDocuments]         = useState([]);
   const [whatsappText, setWhatsappText]   = useState("");
   const [loading, setLoading]             = useState(false);
@@ -252,7 +254,7 @@ function UploadPage() {
   });
 
   const taggedCount  = useMemo(() => documents.filter((d) => d.tag).length, [documents]);
-  const canGenerate  = taggedCount >= 1 && !loading;
+  const canGenerate  = taggedCount >= 1 && !loading && Boolean(user);
 
   const updateTag = (id, tag) =>
     setDocuments((cur) => cur.map((d) => (d.id === id ? { ...d, tag } : d)));
@@ -294,6 +296,10 @@ function UploadPage() {
   // ── Generate handler ────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!canGenerate) return;
+    if (!user) {
+      setErrorMessage("Please sign in with Google to generate your Work Passport.");
+      return;
+    }
 
     const sessionId = crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     window.localStorage.setItem("kamaaiproof-last-session-id", sessionId);
@@ -545,14 +551,26 @@ function UploadPage() {
         >
           Open Demo Result
         </button>
+        {!user && authReady && (
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={signInWithGoogle}
+            disabled={loading}
+          >
+            Sign in with Google
+          </button>
+        )}
         <p className="status-text" aria-live="polite">
           {documents.length === 0
             ? "Upload at least one file to continue."
             : taggedCount === 0
               ? "Tag at least one file to continue."
-              : canGenerate
-                ? `Ready — ${taggedCount} tagged document${taggedCount !== 1 ? "s" : ""} will be analysed.`
-                : "Generating…"
+              : !user
+                ? "Sign in with Google to generate your passport."
+                : canGenerate
+                  ? `Ready — ${taggedCount} tagged document${taggedCount !== 1 ? "s" : ""} will be analysed.`
+                  : "Generating…"
           }
         </p>
       </div>

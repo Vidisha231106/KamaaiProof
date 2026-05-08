@@ -70,6 +70,7 @@ def save(
         # ── In-memory fallback ────────────────────────────────────────────────
         record = {
             "session_id": sid,
+            "user_id": user_id,
             "timestamp": time.time(),
             "transactions": [t.model_dump() for t in transactions],
             "summary": summary,
@@ -82,6 +83,7 @@ def save(
     try:
         client.table("sessions").insert({
             "id": sid,
+            "user_id": user_id,
             "consistency_score":  int(summary.get("consistency_score", 0)),
             "total_income":       float(summary.get("total_income", 0)),
             "avg_monthly_income": float(summary.get("average_monthly_income", 0)),
@@ -101,6 +103,7 @@ def save(
         try:
             client.table("transactions").insert({
                 "session_id":       sid,
+                "user_id":          user_id,
                 "source":           data.get("source"),
                 "amount":           data.get("amount"),
                 "date":             data.get("date"),
@@ -121,7 +124,7 @@ def save(
 # get_session()  — primary retrieval by session_id
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_session(session_id: str) -> dict | None:
+def get_session(session_id: str, user_id: str | None = None) -> dict | None:
     """
     Retrieve a single session and its transactions by session_id.
 
@@ -132,19 +135,29 @@ def get_session(session_id: str) -> dict | None:
 
     if client is None:
         # Search in-memory fallback
-        for records in _store.values():
-            for record in records:
-                if record.get("session_id") == session_id:
-                    return _format_session_response(session_id, record["summary"], record["transactions"])
+        if user_id and user_id in _store:
+            records = _store.get(user_id, [])
+        else:
+            records = [record for records in _store.values() for record in records]
+
+        for record in records:
+            if record.get("session_id") == session_id:
+                return _format_session_response(session_id, record["summary"], record["transactions"])
         return None
 
     try:
-        s_res = client.table("sessions").select("*").eq("id", session_id).maybe_single().execute()
+        s_query = client.table("sessions").select("*").eq("id", session_id)
+        if user_id:
+            s_query = s_query.eq("user_id", user_id)
+        s_res = s_query.maybe_single().execute()
         session = s_res.data
         if not session:
             return None
 
-        t_res = client.table("transactions").select("*").eq("session_id", session_id).execute()
+        t_query = client.table("transactions").select("*").eq("session_id", session_id)
+        if user_id:
+            t_query = t_query.eq("user_id", user_id)
+        t_res = t_query.execute()
         txns = t_res.data or []
 
         summary = {

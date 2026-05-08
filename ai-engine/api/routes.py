@@ -29,6 +29,7 @@ import storage.store as store
 import storage.supabase_client as supabase_client
 import retrieval.vector_store as vector_store
 from security.rbac import check_access, get_role, filter_response_for_role
+from security.auth import get_user_id_from_request
 from extraction.openclaw_gateway import OpenClawGateway
 
 
@@ -108,6 +109,7 @@ async def process_document(body: ProcessDocumentRequest):
 
 @router.post("/parse")
 async def parse_multipart(
+    request: Request,
     files: List[UploadFile] = File(default=[]),
     metadata: str = Form(default="[]"),
     whatsappText: str = Form(default=""),
@@ -129,6 +131,7 @@ async def parse_multipart(
             return False
 
     session_id = sessionId if sessionId and _is_valid_uuid(sessionId) else str(uuid4())
+    user_id = get_user_id_from_request(request)
     documents = []
     skipped_files: list[str] = []
     temp_paths: list[str] = []
@@ -228,8 +231,6 @@ async def parse_multipart(
             "flags": flags,
         }, status_code=200)
 
-    user_id = "session_user"
-
     try:
         result = run_pipeline_batch(user_id=user_id, documents=documents, session_id=session_id)
     finally:
@@ -256,14 +257,15 @@ async def parse_multipart(
 
 
 @router.get("/session/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
     """
     Re-fetch a previously processed session by its UUID.
 
     The frontend stores session_id in localStorage after a successful /parse
     call and uses this endpoint to restore the result page on revisit.
     """
-    session = store.get_session(session_id)
+    user_id = get_user_id_from_request(request)
+    session = store.get_session(session_id, user_id=user_id)
     if not session:
         raise HTTPException(
             status_code=404,
@@ -273,7 +275,7 @@ async def get_session(session_id: str):
 
 
 @router.get("/results/{user_id}")
-async def get_results(user_id: str, requesting_user: str = "worker_001"):
+async def get_results(user_id: str, request: Request):
     """
     Retrieve stored results for a user.
 
@@ -284,6 +286,10 @@ async def get_results(user_id: str, requesting_user: str = "worker_001"):
                         In production this comes from the JWT token.
     """
     # RBAC check
+    requesting_user = get_user_id_from_request(request)
+    if requesting_user != user_id:
+        raise HTTPException(status_code=403, detail="Access denied for this user.")
+
     access = check_access(
         requesting_user_id=requesting_user,
         target_user_id=user_id,

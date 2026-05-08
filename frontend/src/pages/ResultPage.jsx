@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import LoanRealityCalculator from "../components/LoanRealityCalculator";
 import { fetchSession } from "../services/api";
 import { normalizeParseResponse } from "../services/transformResult";
+import { useAuth } from "../contexts/AuthContext";
 
 function toRupees(amount) {
   const numeric = Number(amount);
@@ -130,6 +131,7 @@ function PdfDownloadButton({ result }) {
 function ResultPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, authReady, signInWithGoogle } = useAuth();
 
   // Prefer result from router state (fresh navigation)
   const [result, setResult] = useState(location.state?.result || null);
@@ -143,10 +145,22 @@ function ResultPage() {
     window.localStorage.getItem("kamaaiproof-last-session-id") ||
     null;
 
+  if (!authReady && !result) {
+    return (
+      <section className="result-page">
+        <div className="empty-state" role="status" aria-live="polite">
+          <h1>Checking your sign-in…</h1>
+          <p>We are verifying your authentication status.</p>
+        </div>
+      </section>
+    );
+  }
+
   // If result is absent (e.g. page refresh), attempt to re-fetch by session_id
   useEffect(() => {
     if (result || fetchError) return;
     if (!sessionId) return;
+    if (!authReady || !user) return;
 
     setFetching(true);
     setFetchError(null);
@@ -166,7 +180,7 @@ function ResultPage() {
         });
       })
       .finally(() => setFetching(false));
-  }, [sessionId, retryCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, retryCount, authReady, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Loading state (re-fetching from Supabase) ─────────────────────────────────────────
   if (fetching) {
@@ -182,6 +196,25 @@ function ResultPage() {
 
   // ── No result available ───────────────────────────────────────────────────────────
   if (!result) {
+    if (!user) {
+      return (
+        <section className="result-page">
+          <div className="empty-state" role="status" aria-live="polite">
+            <h1>Sign in to view your Work Passport</h1>
+            <p>Your results are secured to your account.</p>
+            <div className="action-row">
+              <button className="btn btn-primary" type="button" onClick={signInWithGoogle}>
+                Sign in with Google
+              </button>
+              <button className="btn btn-secondary" type="button" onClick={() => navigate("/upload")}>
+                Back to Uploads
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     if (sessionId && fetchError?.status === 404) {
       return (
         <section className="result-page">
