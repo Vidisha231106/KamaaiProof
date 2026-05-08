@@ -145,6 +145,41 @@ function ResultPage() {
     window.localStorage.getItem("kamaaiproof-last-session-id") ||
     null;
 
+  // If result is absent (e.g. page refresh), attempt to re-fetch by session_id.
+  // Must be declared BEFORE any conditional early returns (Rules of Hooks).
+  useEffect(() => {
+    if (result || fetchError) return;
+    if (!sessionId) return;
+    // Skip re-fetch for anonymous users — their sessions are in-memory only
+    // and won't survive a server restart.
+    if (!authReady) return;
+
+    setFetching(true);
+    setFetchError(null);
+    fetchSession(sessionId)
+      .then((payload) => {
+        const restored = normalizeParseResponse(payload, [], "");
+        setResult(restored);
+      })
+      .catch((err) => {
+        const status = err?.response?.status || null;
+        // 404 means the session is gone (server restarted or expired).
+        // Clear the stale localStorage entry so we don't re-fetch forever.
+        if (status === 404) {
+          window.localStorage.removeItem("kamaaiproof-last-session-id");
+        }
+        setFetchError({
+          status,
+          message:
+            err?.response?.data?.detail ||
+            err?.response?.data?.message ||
+            "We could not load your session right now.",
+        });
+      })
+      .finally(() => setFetching(false));
+  }, [sessionId, retryCount, authReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
   if (!authReady && !result) {
     return (
       <section className="result-page">
@@ -156,31 +191,6 @@ function ResultPage() {
     );
   }
 
-  // If result is absent (e.g. page refresh), attempt to re-fetch by session_id
-  useEffect(() => {
-    if (result || fetchError) return;
-    if (!sessionId) return;
-    if (!authReady || !user) return;
-
-    setFetching(true);
-    setFetchError(null);
-    fetchSession(sessionId)
-      .then((payload) => {
-        const restored = normalizeParseResponse(payload, [], "");
-        setResult(restored);
-      })
-      .catch((err) => {
-        console.error("[ResultPage] Session re-fetch failed:", err);
-        setFetchError({
-          status: err?.response?.status || null,
-          message:
-            err?.response?.data?.detail ||
-            err?.response?.data?.message ||
-            "We could not load your session right now.",
-        });
-      })
-      .finally(() => setFetching(false));
-  }, [sessionId, retryCount, authReady, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Loading state (re-fetching from Supabase) ─────────────────────────────────────────
   if (fetching) {

@@ -216,7 +216,7 @@ async def parse_multipart(
 
     # Handle WhatsApp text (treat as UPI by default, no file upload)
     if whatsappText and whatsappText.strip():
-        documents.append({"document_type": "upi", "content": whatsappText, "document_url": None})
+        documents.append({"document_type": "whatsapp", "content": whatsappText, "document_url": None})
 
     if not documents:
         flags = ["No processable content found in submission."]

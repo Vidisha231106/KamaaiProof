@@ -254,7 +254,7 @@ function UploadPage() {
   });
 
   const taggedCount  = useMemo(() => documents.filter((d) => d.tag).length, [documents]);
-  const canGenerate  = taggedCount >= 1 && !loading && Boolean(user);
+  const canGenerate  = taggedCount >= 1 && !loading;
 
   const updateTag = (id, tag) =>
     setDocuments((cur) => cur.map((d) => (d.id === id ? { ...d, tag } : d)));
@@ -307,10 +307,6 @@ function UploadPage() {
   // ── Generate handler ────────────────────────────────────────────────────────
   const handleGenerate = async () => {
     if (!canGenerate) return;
-    if (!user) {
-      setErrorMessage("Please sign in with Google to generate your Work Passport.");
-      return;
-    }
 
     const sessionId = crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     window.localStorage.setItem("kamaaiproof-last-session-id", sessionId);
@@ -585,8 +581,8 @@ function UploadPage() {
             ? "Upload at least one file to continue."
             : taggedCount === 0
               ? "Tag at least one file to continue."
-              : !user
-                ? "Sign in with Google to generate your passport."
+              : !user && authReady
+                ? `Ready — ${taggedCount} tagged document${taggedCount !== 1 ? "s" : ""} will be analysed. Sign in to save results.`
                 : canGenerate
                   ? `Ready — ${taggedCount} tagged document${taggedCount !== 1 ? "s" : ""} will be analysed.`
                   : "Generating…"
